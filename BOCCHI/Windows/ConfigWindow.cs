@@ -1,6 +1,7 @@
 ﻿using System.Linq;
 using System.Numerics;
 using BOCCHI.Modules;
+using BOCCHI.Ui;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Bindings.ImGui;
@@ -25,11 +26,16 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
 
     protected override void Render(RenderContext context)
     {
+        using var theme = CrescentTheme.Push();
         var modules = Plugin.Modules.GetModulesByConfigOrder().ToList();
         selectedConfigModule ??= modules.FirstOrDefault();
 
         using (ImRaii.Child("##LeftPanel", new Vector2(300, 0), true))
         {
+            ImGui.TextColored(CrescentTheme.AccentSoft, "MODULES");
+            ImGui.TextDisabled("Crescent Isle Useful Tool");
+            ImGui.Separator();
+
             foreach (var module in modules)
             {
                 if (module is not Module concreteModule || concreteModule.Config == null)
@@ -55,10 +61,21 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
 
         ImGui.SameLine();
 
+        var activeModule = selectedConfigModule;
+        if (activeModule == null)
+        {
+            ImGui.TextDisabled("No configurable modules are available.");
+            return;
+        }
 
         using (ImRaii.Child("##RightPanel", new Vector2(0, 0), true))
         {
-            selectedConfigModule!.RenderConfigUi(context);
+            var settingsTitle = activeModule is Module selectedModule
+                ? selectedModule.Config?.GetTitle()
+                : null;
+            ImGui.TextColored(CrescentTheme.AccentSoft, settingsTitle ?? "SETTINGS");
+            ImGui.Separator();
+            activeModule.RenderConfigUi(context);
         }
     }
 }

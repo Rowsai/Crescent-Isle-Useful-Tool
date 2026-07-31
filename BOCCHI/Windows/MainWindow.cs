@@ -1,6 +1,7 @@
 ﻿using System.Numerics;
 using BOCCHI.Data;
 using BOCCHI.Modules.Automator;
+using BOCCHI.Ui;
 using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
 using Dalamud.Bindings.ImGui;
@@ -55,6 +56,8 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
 
     protected override void Render(RenderContext context)
     {
+        using var theme = CrescentTheme.Push();
+
         if (!ZoneData.IsInOccultCrescent())
         {
             ImGui.TextUnformatted(I18N.T("generic.label.not_in_zone"));
@@ -70,12 +73,24 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
 
         if (ImGui.BeginTabBar("##OccultCrescentArea"))
         {
+            DrawHeader(currentTerritory);
             DrawAreaTab("南征編 (South Horn)", ZoneData.SOUTHHORN, ZoneData.IsInSouthHorn(), selectCurrentArea && currentTerritory == ZoneData.SOUTHHORN, context);
             DrawAreaTab("北征編 (North Horn)", ZoneData.NORTHHORN, ZoneData.IsInNorthHorn(), selectCurrentArea && currentTerritory == ZoneData.NORTHHORN, context);
             ImGui.EndTabBar();
         }
 
         previousTerritory = currentTerritory;
+    }
+
+    private static void DrawHeader(uint currentTerritory)
+    {
+        ImGui.TextColored(CrescentTheme.AccentSoft, "CRESCENT ISLE");
+        ImGui.SameLine();
+        ImGui.TextDisabled("USEFUL TOOL");
+        ImGui.SameLine(ImGui.GetWindowWidth() - 155f);
+        var area = currentTerritory == ZoneData.NORTHHORN ? "NORTH HORN" : "SOUTH HORN";
+        ImGui.TextColored(CrescentTheme.Accent, $"● {area}");
+        ImGui.Separator();
     }
 
     private void DrawAreaTab(string label, uint territoryId, bool isCurrentArea, bool forceSelected, RenderContext context)
