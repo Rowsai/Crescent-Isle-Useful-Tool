@@ -1,0 +1,39 @@
+﻿{
+  "modules": {
+    "buff": {
+      "config": {
+        "title": "Buffs Config",
+        "apply_romeos_ballad": {
+          "label": "Apply Romeo's Ballad",
+          "tooltip": "Apply the Phantom Bard Buff, Romeo's Ballad"
+        },
+        "apply_enduring_fortitude": {
+          "label": "Apply Enduring Fortitude",
+          "tooltip": "Apply the Phantom Knight Buff, Enduring Fortitude"
+        },
+        "apply_fleetfooted": {
+          "label": "Apply Fleetfooted",
+          "tooltip": "Apply the Phantom Monk Buff, Fleetfooted"
+        },
+        "apply_quicker_step": {
+          "label": "Apply Quicker Step",
+          "tooltip": "Apply the Phantom Dancer Buff, Quicker Step"
+        },
+        "reapply_threshold": {
+          "label": "Reapply Threshold",
+          "tooltip": "The number of minutes remaining on the lowest buff to refresh them all during automatic execution."
+        },
+        "use_inquiring_mind": {
+          "label": "Use Inquiring Mind",
+          "tooltip":  "Temporarily switch to Freelancer, use Inquiring Mind, then return to the previous support job."
+        }
+      },
+      "panel": {
+        "title": "Buffs",
+        "button": {
+          "tooltip": "Switch to Freelancer, use Inquiring Mind when enabled, then return to your original phantom job."
+        }
+      }
+    }
+  }
+}

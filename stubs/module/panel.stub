@@ -1,0 +1,14 @@
+using Ocelot;
+
+namespace BOCCHI.Modules.{{name}};
+
+public class Panel
+{
+    public void Draw({{name}}Module module)
+    {
+        OcelotUI.Title("{{name}}:");
+        OcelotUI.Indent(() => {
+            // Content here
+        });
+    }
+}

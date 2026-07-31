@@ -1,0 +1,39 @@
+{
+  "modules": {
+    "buff": {
+      "config": {
+        "title": "バフ設定",
+        "apply_romeos_ballad": {
+          "label": "あいのうたを適用",
+          "tooltip": "サポートジョブ吟遊詩人のバフ「あいのうた」を適用します"
+        },
+        "apply_enduring_fortitude": {
+          "label": "いのりを適用",
+          "tooltip": "サポートジョブナイトのバフ「いのり」を適用します"
+        },
+        "apply_fleetfooted": {
+          "label": "かまえるを適用",
+          "tooltip": "サポートジョブモンクのバフ「かまえる」を適用します"
+        },
+        "use_inquiring_mind": {
+          "label": "すっぴんの「探究心」を使用",
+          "tooltip": "一時的にすっぴんへ変更して探究心を使用し、完了後に元のサポートジョブへ戻ります。"
+        },
+        "reapply_threshold": {
+          "label": "再適用しきい値",
+          "tooltip": "自動実行中にすべてのバフを更新するための、最も低いバフの残り分数。"
+        },
+        "apply_quicker_step": {
+          "label": null,
+          "tooltip": null
+        }
+      },
+      "panel": {
+        "title": "バフ",
+        "button": {
+          "tooltip": "有効になっている各バフのサポートジョブに切り替えてバフスキルを使用し、元のサポートジョブに戻ります。"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "Author": "Rowsai",
+  "Name": "Crescent Isle Useful Tool",
+  "InternalName": "BOCCHI",
+  "Punchline": "Useful tools for Occult Crescent exploration.",
+  "Description": "Useful tools for Occult Crescent exploration.\n- Treasure and carrot assistance.\n- FATE and CE panels with navigation support.\n- Optional illegal mode for automated activities.",
+  "IconUrl": "https://raw.githubusercontent.com/Rowsai/Crescent-Isle-Useful-Tool/main/assets/icon.png",
+  "ApplicableVersion": "any",
+  "DalamudApiLevel": 15,
+  "Tags": [
+    "BOCCHI",
+    "Occult Crescent",
+    "Occult",
+    "Crescent",
+    "Illegal",
+    "Critical Encounter",
+    "Fate",
+    "Faye",
+    "BOCCHER",
+    "OCH"
+  ]
+}

@@ -1,0 +1,8 @@
+using Ocelot.Config.Attributes;
+using Ocelot.Modules;
+
+namespace BOCCHI.Modules.{{name}};
+
+public class {{name}}Config : ModuleConfig
+{
+}
