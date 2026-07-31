@@ -53,6 +53,8 @@ public abstract class Hunter
 
     protected string runtimeStatus = "停止中";
 
+    private bool HasPausedProgress => !running && Steps.Count > 0 && stepIndex < Steps.Count;
+
     protected PathfinderStep CurrentStep
     {
         get => Steps[stepIndex];
@@ -236,17 +238,9 @@ public abstract class Hunter
         {
             if (ImGui.Button(running ? I18N.T("generic.label.stop") : I18N.T("generic.label.start")))
             {
-                running = !running;
-                if (running == false)
+                if (running)
                 {
-                    stopwatch.Stop();
-                    running = false;
-                    stepIndex = 0;
-                    Steps.Clear();
-                    VnavmeshIpc.TryStop(vnav);
-                    Plugin.Chain.Abort();
-                    StepProcessor.Abort();
-                    pathfinder = null;
+                    Pause();
                 }
                 else
                 {
@@ -255,16 +249,43 @@ public abstract class Hunter
                         automator.DisableIllegalMode();
                     }
 
-                    stopwatch.Restart();
-                    runtimeStatus = "開始準備中です。";
+                    var isResuming = HasPausedProgress;
+                    running = true;
+                    if (isResuming)
+                    {
+                        stopwatch.Start();
+                        runtimeStatus = $"中断地点から再開します（{stepIndex}/{Steps.Count}）。";
+                    }
+                    else
+                    {
+                        stepIndex = 0;
+                        Steps.Clear();
+                        pathfinder = null;
+                        stopwatch.Restart();
+                        runtimeStatus = "開始準備中です。";
+                    }
                 }
             }
 
-            if (running)
+            if (HasPausedProgress)
+            {
+                ImGui.SameLine();
+                if (ImGui.Button("最初から##ResetHunterRoute"))
+                {
+                    ResetProgress();
+                }
+
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("保存した巡回位置を破棄し、次回は新しい経路を作成します。");
+                }
+            }
+
+            if (running || HasPausedProgress)
             {
                 ImGui.Spacing();
                 ImGui.TextDisabled("実行状態");
-                ImGui.TextWrapped(runtimeStatus);
+                ImGui.TextWrapped(HasPausedProgress ? $"一時停止中（{stepIndex}/{Steps.Count}から再開できます）" : runtimeStatus);
             }
 
             if (stopwatch.Elapsed > TimeSpan.Zero)
@@ -286,7 +307,7 @@ public abstract class Hunter
             }
 
 
-            if (running && stepIndex < Steps.Count)
+            if ((running || HasPausedProgress) && stepIndex < Steps.Count)
             {
                 OcelotUi.LabelledValue(I18N.T("hunter.progress"), $"{stepIndex}/{Steps.Count}");
 
@@ -318,6 +339,43 @@ public abstract class Hunter
         Plugin.Chain.Abort();
         StepProcessor.Abort();
         pathfinder = null;
+    }
+
+    public void ResetForTerritoryChange()
+    {
+        ResetProgress();
+    }
+
+    private void Pause()
+    {
+        stopwatch.Stop();
+        running = false;
+        VnavmeshIpc.TryStop(vnav);
+        Plugin.Chain.Abort();
+        StepProcessor.Abort();
+
+        // A route that has already been constructed is intentionally retained.
+        // If pathfinding had not completed yet, rebuild it on the next start.
+        if (Steps.Count == 0)
+        {
+            pathfinder = null;
+        }
+
+        runtimeStatus = Steps.Count > 0 ? "一時停止中" : "停止中";
+    }
+
+    private void ResetProgress()
+    {
+        stopwatch.Reset();
+        running = false;
+        stepIndex = 0;
+        Steps.Clear();
+        JSON = "";
+        VnavmeshIpc.TryStop(vnav);
+        Plugin.Chain.Abort();
+        StepProcessor.Abort();
+        pathfinder = null;
+        runtimeStatus = "停止中";
     }
 
 

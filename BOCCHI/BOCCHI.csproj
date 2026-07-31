@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
     <PropertyGroup>
-        <Version>3.2.9</Version>
+        <Version>3.3.0</Version>
         <Description>クレセントアイルの南征編・北征編向け総合探索支援ツール。</Description>
         <PackageProjectUrl>https://github.com/Rowsai/Crescent-Isle-Useful-Tool</PackageProjectUrl>
         <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
@@ -28,6 +28,10 @@
         <None Include="..\Data\**">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
             <Link>Data\%(RecursiveDir)%(Filename)%(Extension)</Link>
+        </None>
+        <None Include="..\THIRD-PARTY-NOTICES.md">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+            <Link>THIRD-PARTY-NOTICES.md</Link>
         </None>
     </ItemGroup>
     <ItemGroup Condition="'$(Configuration)' == 'Debug'">

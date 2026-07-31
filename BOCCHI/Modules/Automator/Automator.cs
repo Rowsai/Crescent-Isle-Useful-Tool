@@ -6,6 +6,7 @@ using BOCCHI.Enums;
 using BOCCHI.Ipc;
 using BOCCHI.Modules.CriticalEncounters;
 using BOCCHI.Modules.Fates;
+using BOCCHI.Modules.MagicPot;
 using BOCCHI.Modules.StateManager;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
@@ -44,6 +45,12 @@ public class Automator
 
     public void PostUpdate(AutomatorModule module, IFramework framework)
     {
+        if (module.TryGetModule<MagicPotModule>(out var magicPot) && magicPot?.IsTreasureSearchActive == true)
+        {
+            SetRuntimeStatus("マジックポットの宝箱探索を優先しています。");
+            return;
+        }
+
         if (!module.TryGetIPCSubscriber<VNavmesh>(out var vnav) || vnav == null)
         {
             SetRuntimeStatus("vnavmeshプラグインの起動を待っています。");

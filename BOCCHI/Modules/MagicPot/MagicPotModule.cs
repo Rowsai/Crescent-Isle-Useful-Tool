@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using BOCCHI.Data;
 using Dalamud.Game.ClientState.Fates;
+using Dalamud.Game.Text;
+using Dalamud.Game.Text.SeStringHandling;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using Ocelot.Modules;
@@ -29,6 +31,8 @@ public class MagicPotModule : Module
 
     private readonly Panel panel = new();
 
+    private readonly MagicPotTreasureHunter treasureHunter;
+
     public override MagicPotConfig Config => PluginConfig.MagicPotConfig;
 
     public override bool IsEnabled => Config.IsPropertyEnabled(nameof(Config.Enabled));
@@ -37,19 +41,45 @@ public class MagicPotModule : Module
 
     public bool IsNorthPotActive => activeNorthPotIds.Count > 0;
 
-    public DateTime NextSpawnUtc => lastNorthPotSpawnUtc?.AddSeconds(RespawnIntervalSeconds)
-                                    ?? estimatedNextSpawnUtc
-                                    ?? DateTime.UtcNow.AddSeconds(FirstSpawnDelaySeconds);
+    public DateTime? NextSpawnUtc
+    {
+        get
+        {
+            if (lastNorthPotSpawnUtc is not { } observed)
+            {
+                return estimatedNextSpawnUtc;
+            }
+
+            var elapsed = Math.Max(0d, (DateTime.UtcNow - observed).TotalSeconds);
+            var cycle = Math.Max(1d, Math.Ceiling(elapsed / RespawnIntervalSeconds));
+            return observed.AddSeconds(cycle * RespawnIntervalSeconds);
+        }
+    }
+
+    public bool HasObservedSpawnTime => lastNorthPotSpawnUtc != null;
+
+    public uint? MostRecentPotFateId { get; private set; }
+
+    public bool IsTreasureSearchActive => treasureHunter.IsActive;
+
+    public string TreasureSearchStatus => treasureHunter.RuntimeStatus;
+
+    public System.Numerics.Vector3? TreasureSearchTarget => treasureHunter.Target;
+
+    public int TreasureSearchHintCount => treasureHunter.HintCount;
 
     public int? OldestPlayerTimeMinutes { get; private set; }
 
     public MagicPotModule(Plugin plugin, Config config)
         : base(plugin, config)
     {
+        treasureHunter = new MagicPotTreasureHunter(this);
     }
 
     public override unsafe void Update(UpdateContext context)
     {
+        treasureHunter.Update();
+
         if (!ZoneData.IsInNorthHorn())
         {
             activeNorthPotIds.Clear();
@@ -63,10 +93,21 @@ public class MagicPotModule : Module
 
         foreach (var fate in activePots)
         {
-            if (activeNorthPotIds.Add((uint)fate.FateId))
+            activeNorthPotIds.Add((uint)fate.FateId);
+
+            // EurekaTrackerAutoPopper records IFate.StartTimeEpoch and calculates
+            // the next alternating pot occurrence from the most recent spawn +30m.
+            // Keep the same precise local observation without uploading player data.
+            if (fate.StartTimeEpoch > 0)
             {
-                lastNorthPotSpawnUtc = DateTime.UtcNow;
-                estimatedNextSpawnUtc = lastNorthPotSpawnUtc.Value.AddSeconds(RespawnIntervalSeconds);
+                var observedUtc = DateTimeOffset.FromUnixTimeSeconds(fate.StartTimeEpoch).UtcDateTime;
+                if (observedUtc <= DateTime.UtcNow.AddMinutes(1)
+                    && (lastNorthPotSpawnUtc == null || observedUtc > lastNorthPotSpawnUtc.Value))
+                {
+                    lastNorthPotSpawnUtc = observedUtc;
+                    MostRecentPotFateId = (uint)fate.FateId;
+                    estimatedNextSpawnUtc = observedUtc.AddSeconds(RespawnIntervalSeconds);
+                }
             }
         }
 
@@ -89,6 +130,7 @@ public class MagicPotModule : Module
         if (previousContentTimeLeftSeconds != null && timeLeft > previousContentTimeLeftSeconds.Value + 60f)
         {
             lastNorthPotSpawnUtc = null;
+            MostRecentPotFateId = null;
             activeNorthPotIds.Clear();
         }
 
@@ -133,14 +175,21 @@ public class MagicPotModule : Module
         return true;
     }
 
+    public override void OnChatMessage(XivChatType type, int timestamp, SeString sender, SeString message, bool isHandled)
+    {
+        treasureHunter.OnChatMessage(type, timestamp, sender, message, isHandled);
+    }
+
     public override void OnTerritoryChanged(uint id)
     {
         activeNorthPotIds.Clear();
         lastNorthPotSpawnUtc = null;
+        MostRecentPotFateId = null;
         previousContentTimeLeftSeconds = null;
         OldestPlayerTimeMinutes = null;
         estimatedNextSpawnUtc = id == ZoneData.NORTHHORN
             ? DateTime.UtcNow.AddSeconds(FirstSpawnDelaySeconds)
             : null;
+        treasureHunter.ResetForTerritoryChange();
     }
 }

@@ -20,6 +20,8 @@ namespace BOCCHI.Modules.Automator;
 
 public abstract class Activity
 {
+    private const float WillOWispVillageAreaRadius = 250f;
+
     public readonly EventData data;
 
     private readonly Lifestream lifestream;
@@ -159,7 +161,27 @@ public abstract class Activity
 
     private AethernetData GetAethernetData()
     {
-        return AethernetData.AllByDistance(GetPosition()).First();
+        var destination = GetPosition();
+        var candidates = AethernetData.All();
+
+        // The village shard can create an unnatural or obstructed route when
+        // the activity is merely on the broad side of the map for which it is
+        // mathematically closest. Only retain it for an activity actually in
+        // the village area around the shard.
+        if (ZoneData.IsInNorthHorn() && !IsInWillOWispVillageArea(destination))
+        {
+            candidates = candidates.Where(data => data.Aethernet != Aethernet.WillOWispVillage);
+        }
+
+        return candidates.OrderBy(data => Vector3.Distance(destination, data.Position)).First();
+    }
+
+    private static bool IsInWillOWispVillageArea(Vector3 position)
+    {
+        var village = Aethernet.WillOWispVillage.GetData().Position;
+        var dx = position.X - village.X;
+        var dz = position.Z - village.Z;
+        return dx * dx + dz * dz <= WillOWispVillageAreaRadius * WillOWispVillageAreaRadius;
     }
 
     protected bool IsInZone()

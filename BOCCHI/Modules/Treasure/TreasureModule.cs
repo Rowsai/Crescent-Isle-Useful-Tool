@@ -69,4 +69,17 @@ public class TreasureModule(Plugin _plugin, Config config) : Module(_plugin, con
 
         return true;
     }
+
+    public override void OnTerritoryChanged(uint id)
+    {
+        Hunter?.ResetForTerritoryChange();
+        Tracker.ResetSession();
+    }
+
+    public override void Dispose()
+    {
+        base.Dispose();
+        Hunter?.ResetForTerritoryChange();
+        Tracker.Dispose();
+    }
 }

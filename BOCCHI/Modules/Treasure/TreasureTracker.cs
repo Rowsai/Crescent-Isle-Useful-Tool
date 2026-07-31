@@ -15,6 +15,16 @@ namespace BOCCHI.Modules.Treasure;
 
 public class TreasureTracker : IDisposable
 {
+    private const int MaximumBronzeChests = 30;
+
+    private const int MaximumSilverChests = 8;
+
+    private readonly HashSet<ulong> recordedOpenedTreasures = [];
+
+    private int observedAcquiredBronzeChests;
+
+    private int observedAcquiredSilverChests;
+
     public List<Treasure> Treasures { get; private set; } = [];
 
     public bool CountInitialised { get; private set; } = false;
@@ -24,6 +34,14 @@ public class TreasureTracker : IDisposable
     public int SilverChests { get; private set; } = 0;
 
     public int RemainingChests => BronzeChests + SilverChests;
+
+    public int AcquiredBronzeChests => CountInitialised
+        ? Math.Max(observedAcquiredBronzeChests, MaximumBronzeChests - BronzeChests)
+        : observedAcquiredBronzeChests;
+
+    public int AcquiredSilverChests => CountInitialised
+        ? Math.Max(observedAcquiredSilverChests, MaximumSilverChests - SilverChests)
+        : observedAcquiredSilverChests;
 
     private readonly TimeSpan ParseWideTextCooldown = TimeSpan.FromSeconds(5);
 
@@ -38,7 +56,7 @@ public class TreasureTracker : IDisposable
     {
         var treasures = Svc.Objects
             .Where(o => o is { ObjectKind: ObjectKind.Treasure })
-            .ToDictionary(o => o.BaseId, o => o);
+            .ToDictionary(o => (ulong)o.EntityId, o => o);
 
         var knownIds = Treasures.Select(t => t.Id).ToHashSet();
 
@@ -73,16 +91,40 @@ public class TreasureTracker : IDisposable
         {
             if (treasure.CheckOpened())
             {
-                if (treasure.GetTreasureType() == TreasureType.Bronze)
-                {
-                    BronzeChests = Math.Max(0, BronzeChests - 1);
-                }
-                else if (treasure.GetTreasureType() == TreasureType.Silver)
-                {
-                    SilverChests = Math.Max(0, SilverChests - 1);
-                }
+                RecordAcquired(treasure.Id, treasure.GetTreasureType());
             }
         }
+    }
+
+    public void RecordAcquired(ulong entityId, TreasureType treasureType)
+    {
+        if (!recordedOpenedTreasures.Add(entityId))
+        {
+            return;
+        }
+
+        if (treasureType == TreasureType.Bronze)
+        {
+            observedAcquiredBronzeChests++;
+            BronzeChests = Math.Max(0, BronzeChests - 1);
+        }
+        else if (treasureType == TreasureType.Silver)
+        {
+            observedAcquiredSilverChests++;
+            SilverChests = Math.Max(0, SilverChests - 1);
+        }
+    }
+
+    public void ResetSession()
+    {
+        Treasures.Clear();
+        recordedOpenedTreasures.Clear();
+        observedAcquiredBronzeChests = 0;
+        observedAcquiredSilverChests = 0;
+        BronzeChests = 0;
+        SilverChests = 0;
+        CountInitialised = false;
+        LastParseWideText = DateTime.MinValue;
     }
 
     private unsafe void OnWideTextPostDraw(AddonEvent type, AddonArgs args)

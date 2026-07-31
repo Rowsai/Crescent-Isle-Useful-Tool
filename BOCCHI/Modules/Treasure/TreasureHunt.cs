@@ -143,7 +143,13 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                     var gameObject = (GameObject*)(void*)obj.Address;
                     var instance = (FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure*)gameObject;
                     TargetSystem.Instance()->InteractWithObject(gameObject);
-                    return instance->Flags.HasFlag(FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags.Opened);
+                    var opened = instance->Flags.HasFlag(FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags.Opened);
+                    if (opened)
+                    {
+                        module.Tracker.RecordAcquired(obj.EntityId, new Treasure(obj).GetTreasureType());
+                    }
+
+                    return opened;
                 }
             }, new TaskManagerConfiguration { TimeLimitMS = 10000, ShowError = false }));
     }

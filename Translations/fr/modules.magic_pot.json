@@ -6,7 +6,11 @@
           "label": null,
           "tooltip": null
         },
-        "title": null
+        "title": null,
+        "treasure_search": {
+          "label": null,
+          "tooltip": null
+        }
       },
       "panel": {
         "active": null,

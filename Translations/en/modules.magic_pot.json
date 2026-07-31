@@ -6,6 +6,10 @@
         "respawn_interval_minutes": {
           "label": "Respawn interval (minutes)",
           "tooltip": "North Horn Magic Pot FATEs are expected on this interval after their last observed spawn."
+        },
+        "treasure_search": {
+          "label": "Magic Pot treasure search mode",
+          "tooltip": "When Cache Me if You Can is detected, use a Magical Elixir and navigate to the inferred coffer candidate from its direction and distance hint."
         }
       },
       "panel": {

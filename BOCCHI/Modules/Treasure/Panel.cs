@@ -60,20 +60,23 @@ public class Panel
         if (!module.Tracker.CountInitialised)
         {
             CrescentTheme.EmptyState("取得可能な宝箱数を計測しています。");
-            return;
         }
-
-        if (!ImGui.BeginTable("##TreasureCounts", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.SizingStretchSame))
+        else if (ImGui.BeginTable("##TreasureCounts", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.SizingStretchSame))
         {
-            return;
+            DrawCount(module.T("panel.active_bronze.label"), module.Tracker.BronzeChests, 30, TreasureModule.Bronze, module.Config.ShowPercentageActiveTreasureCount);
+            DrawCount(module.T("panel.active_silver.label"), module.Tracker.SilverChests, 8, TreasureModule.Silver, module.Config.ShowPercentageActiveTreasureCount);
+            ImGui.TableNextColumn();
+            ImGui.TextDisabled(module.T("panel.remaining.label"));
+            ImGui.TextColored(CrescentTheme.AccentSoft, module.Tracker.RemainingChests.ToString());
+            ImGui.EndTable();
         }
 
-        DrawCount(module.T("panel.active_bronze.label"), module.Tracker.BronzeChests, 30, TreasureModule.Bronze, module.Config.ShowPercentageActiveTreasureCount);
-        DrawCount(module.T("panel.active_silver.label"), module.Tracker.SilverChests, 8, TreasureModule.Silver, module.Config.ShowPercentageActiveTreasureCount);
-        ImGui.TableNextColumn();
-        ImGui.TextDisabled(module.T("panel.remaining.label"));
-        ImGui.TextColored(CrescentTheme.AccentSoft, module.Tracker.RemainingChests.ToString());
-        ImGui.EndTable();
+        ImGui.Spacing();
+        ImGui.TextDisabled("この探索で取得済み");
+        ImGui.SameLine();
+        ImGui.TextColored(TreasureModule.Bronze, $"青銅 {module.Tracker.AcquiredBronzeChests}");
+        ImGui.SameLine();
+        ImGui.TextColored(TreasureModule.Silver, $"白銀 {module.Tracker.AcquiredSilverChests}");
     }
 
     private static void DrawCount(string label, int value, int maximum, Vector4 color, bool showPercentage)
