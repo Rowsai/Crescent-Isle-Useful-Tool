@@ -14,23 +14,26 @@ public class MainCommand(Plugin plugin) : OcelotCommand
 {
     protected override string Command
     {
-        get => "/bocchi";
+        get => "/ciut";
     }
 
     protected override string Description
     {
         get => @"
-Opens Occult Crescent Helper main ui
- - /bocchi : Opens the main ui
- - /bocchi config : opens the config ui
- - /bocchi cfg : opens the config ui
+メイン画面を開きます。
+ - /ciut : メイン画面を開く
+ - /ciut config : 設定画面を開く
+ - /ciut illegal [on|off|toggle] : 不正モードを操作する
+ - /ciut buff : バフ更新を実行する
+ - /ciut tp [pot|ce|fate] : 対象に最も近いエーテライトへ移動する
+ - /ciut language <en|de|fr|jp|uwu> : 表示言語を変更する
 --------------------------------
 ".Trim();
     }
 
     protected override IReadOnlyList<string> Aliases
     {
-        get => ["/och", "/occultcrescenthelper"];
+        get => ["/crescent", "/crescentisle"];
     }
 
     private readonly IReadOnlyList<string> languageCodes =
@@ -56,13 +59,19 @@ Opens Occult Crescent Helper main ui
 
         if (arguments == "buff")
         {
-            new BuffCommand(plugin).Execute("/bocchibuff", "");
+            new BuffCommand(plugin).Execute("/ciutbuff", "");
             return;
         }
 
-        if (arguments.StartsWith("tp"))
+        if (arguments == "tp" || arguments.StartsWith("tp "))
         {
-            new TeleportCommand(plugin).Execute("/bocchitp", arguments.ReplaceFirst("tp", "").Trim());
+            new TeleportCommand(plugin).Execute("/ciuttp", arguments.ReplaceFirst("tp", "").Trim());
+            return;
+        }
+
+        if (arguments == "illegal" || arguments.StartsWith("illegal "))
+        {
+            new OCHIllegalCommand(plugin).Execute("/ciutillegal", arguments.ReplaceFirst("illegal", "").Trim());
             return;
         }
 
@@ -75,15 +84,15 @@ Opens Occult Crescent Helper main ui
                 if (languageCodes.Contains(code))
                 {
                     I18N.SetLanguage(code);
-                    Svc.Chat.Print($"Language set to: {code}");
+                    Svc.Chat.Print($"表示言語を {code} に変更しました。");
                     return;
                 }
 
-                Svc.Log.Error($"Unknown language code: {code}");
+                Svc.Chat.PrintError($"対応していない言語コードです: {code}");
                 return;
             }
 
-            Svc.Chat.Print("Usage: /bocchi language <code>");
+            Svc.Chat.Print("使用方法: /ciut language <en|de|fr|jp|uwu>");
             return;
         }
 

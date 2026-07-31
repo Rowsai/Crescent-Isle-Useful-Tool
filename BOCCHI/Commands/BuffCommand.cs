@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BOCCHI.Modules.Buff;
 using Ocelot.Commands;
 using Ocelot.Modules;
@@ -9,14 +10,18 @@ public class BuffCommand(Plugin plugin) : OcelotCommand
 {
     protected override string Command
     {
-        get => "/bocchibuff";
+        get => "/ciutbuff";
     }
 
     protected override string Description
     {
-        get => "";
+        get => "ナレッジバフの更新処理を実行します。";
     }
 
+    protected override IReadOnlyList<string> Aliases
+    {
+        get => ["/crescentbuff"];
+    }
 
     public override void Execute(string command, string arguments)
     {

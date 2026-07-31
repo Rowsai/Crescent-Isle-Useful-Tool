@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BOCCHI.Chains;
 using BOCCHI.Data;
 using BOCCHI.Enums;
@@ -16,36 +17,51 @@ public class TeleportCommand(Plugin plugin) : OcelotCommand
 {
     protected override string Command
     {
-        get => "/bocchitp";
+        get => "/ciuttp";
     }
 
     protected override string Description
     {
-        get => "";
+        get => @"
+発生中のアクティビティに最も近いエーテライトへ移動します。
+ - /ciuttp pot : マジックポットを優先
+ - /ciuttp ce : CEを対象にする
+ - /ciuttp fate : 通常FATEを対象にする
+--------------------------------
+".Trim();
     }
 
+    protected override IReadOnlyList<string> Aliases
+    {
+        get => ["/crescenttp"];
+    }
+
+    protected override IReadOnlyList<string> ValidArguments
+    {
+        get => ["pot", "ce", "fate"];
+    }
 
     public override void Execute(string command, string arguments)
     {
         if (ZoneData.GetNearbyAethernetShards().Count <= 0)
         {
-            Svc.Chat.Print("You are not near a aethernet shards.");
+            Svc.Chat.Print("エーテライトの近くにいません。");
             return;
         }
 
         var lifestream = plugin.IPC.GetSubscriber<Lifestream>();
         if (!lifestream.IsReady() || lifestream.IsBusy())
         {
-            Svc.Chat.Print("Lifestream is busy");
+            Svc.Chat.Print("Lifestreamが処理中です。");
             return;
         }
 
         Aethernet? shard = null;
         if (arguments.Length <= 0)
         {
+            shard ??= GetPotFateAethernet();
             shard ??= GetCriticalEncounterAethernet();
             shard ??= GetFateAethernet();
-            shard ??= GetPotFateAethernet();
         }
         else
         {
@@ -65,13 +81,13 @@ public class TeleportCommand(Plugin plugin) : OcelotCommand
 
         if (shard == null)
         {
-            Svc.Chat.Print("No aethernet shard found");
+            Svc.Chat.Print("移動先のエーテライトが見つかりませんでした。");
             return;
         }
 
         if (ZoneData.IsNearAethernetShard((Aethernet)shard))
         {
-            Svc.Chat.Print("You are already at the closest shard");
+            Svc.Chat.Print("すでに最寄りのエーテライト付近にいます。");
             return;
         }
 
@@ -120,11 +136,7 @@ public class TeleportCommand(Plugin plugin) : OcelotCommand
                 continue;
             }
 
-            if (!EventData.CriticalEncounters.TryGetValue(encounter.DynamicEventId, out var data))
-            {
-                continue;
-            }
-
+            var data = EventData.GetCriticalEncounter(encounter.DynamicEventId);
             return data.Aethernet ?? ZoneData.GetClosestAethernetShard(data.StartPosition ?? encounter.MapMarker.Position);
         }
 

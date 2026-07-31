@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using BOCCHI.Enums;
 using BOCCHI.Modules.CriticalEncounters;
 using BOCCHI.Modules.Fates;
 using ECommons.DalamudServices;
@@ -15,24 +14,23 @@ public class OCHCmdCommand(Plugin plugin) : OcelotCommand
 {
     protected override string Command
     {
-        get => "/bocchicmd";
+        get => "/ciutcmd";
     }
 
     protected override string Description
     {
         get => @"
-Utility command.
- - Flag commands clear active flag before trying to place a new one
-   - /bocchicmd flag-active-ce (Place a flag marker on the current Critical Engagement)
-   - /bocchicmd flag-active-fate (Place a flag marker on a current Fate)
-   - /bocchicmd flag-active-non-pot-fate (Place a flag marker on a current fate that isn't a pot fate)
+アクティビティの位置へフラッグを設定します。既存のフラッグは解除されます。
+ - /ciutcmd flag-active-ce : 受付中のCEへフラッグを設定
+ - /ciutcmd flag-active-fate : 発生中のFATEへフラッグを設定
+ - /ciutcmd flag-active-non-pot-fate : マジックポット以外のFATEへフラッグを設定
 --------------------------------
 ".Trim();
     }
 
     protected override IReadOnlyList<string> Aliases
     {
-        get => ["/ochcmd"];
+        get => ["/crescentcmd"];
     }
 
     protected override IReadOnlyList<string> ValidArguments
@@ -81,7 +79,7 @@ Utility command.
 
         foreach (var fate in source.fates.Values)
         {
-            if (ignorePots && fate.Data.Note == MonsterNote.PersistentPots)
+            if (ignorePots && fate.IsPotFate())
             {
                 continue;
             }

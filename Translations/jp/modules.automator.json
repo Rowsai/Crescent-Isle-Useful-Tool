@@ -170,12 +170,12 @@
           "none": "アクティビティを待機中"
         },
         "lens": {
-          "title": "BOCCHI 不正レンズ"
+          "title": "Crescent Isle Useful Tool 不正モード"
         }
       },
       "messages": {
-        "off": "[BOCCHI] 不正モード OFF",
-        "on": "[BOCCHI] 不正モード ON"
+        "off": "[Crescent Isle Useful Tool] 不正モード OFF",
+        "on": "[Crescent Isle Useful Tool] 不正モード ON"
       }
     }
   }

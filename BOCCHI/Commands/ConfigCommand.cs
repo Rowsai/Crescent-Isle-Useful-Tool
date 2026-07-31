@@ -9,21 +9,22 @@ public class ConfigCommand(Plugin plugin) : OcelotCommand
 {
     protected override string Command
     {
-        get => "/bocchicfg";
+        get => "/ciutcfg";
     }
 
     protected override string Description
     {
         get => @"
-Opens Occult Crescent Helper config ui
- - /bocchicfg : Opens the config ui
+設定画面を開きます。
+ - /ciutcfg : 設定画面を開く
+ - /ciut config : メインコマンドから設定画面を開く
 --------------------------------
 ".Trim();
     }
 
     protected override IReadOnlyList<string> Aliases
     {
-        get => ["/bocchic", "/ochcfg", "/ochc", "/occultcrescenthelperconfig"];
+        get => ["/ciutconfig", "/crescentconfig"];
     }
 
 

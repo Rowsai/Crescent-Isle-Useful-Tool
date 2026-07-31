@@ -174,8 +174,8 @@
         }
       },
       "messages": {
-        "off": "[BOCCHI] 非法模式关闭",
-        "on": "[BOCCHI] 非法模式启动"
+        "off": "[Crescent Isle Useful Tool] 非法模式关闭",
+        "on": "[Crescent Isle Useful Tool] 非法模式启动"
       }
     }
   }

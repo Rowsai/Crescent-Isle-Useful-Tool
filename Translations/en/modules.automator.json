@@ -170,12 +170,12 @@
           "none": "Waiting for Activity"
         },
         "lens": {
-          "title": "BOCCHI Illegal Lens"
+          "title": "Crescent Isle Useful Tool - Illegal Mode"
         }
       },
       "messages": {
-        "on": "[BOCCHI] Illegal Mode On",
-        "off": "[BOCCHI] Illegal Mode Off"
+        "on": "[Crescent Isle Useful Tool] Illegal Mode On",
+        "off": "[Crescent Isle Useful Tool] Illegal Mode Off"
       }
     }
   }
