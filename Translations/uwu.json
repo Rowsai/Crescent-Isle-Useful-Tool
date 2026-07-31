@@ -1,10 +1,10 @@
 {
   "windows": {
     "main": {
-      "title": "BOCCHI-chan! owo"
+      "title": "Crescent Isle Useful Tool-chan! owo"
     },
     "config": {
-      "title": "BOCCHI Configgy-wiggy! ^_^"
+      "title": "Crescent Isle Useful Tool Configgy-wiggy! ^_^"
     }
   },
   "generic": {
@@ -132,7 +132,7 @@
       },
       "path_to_destination": {
         "label": "Path to event aftew tewepowting!",
-        "tooltip": "Use vnavmesh to head to the next event aftew tewepowting via the OCH panew! nyaa~"
+        "tooltip": "Use vnavmesh to head to the next event aftew tewepowting via the Crescent Isle Useful Tool panew! nyaa~"
       },
       "return_after_fate": {
         "label": "Weturn to base aftew Fwate!",

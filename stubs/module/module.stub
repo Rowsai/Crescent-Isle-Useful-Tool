@@ -1,7 +1,7 @@
 
 using Ocelot.Modules;
 
-namespace BOCCHI.Modules.{{name}};
+namespace CrescentIsleUsefulTool.Modules.{{name}};
 
 [OcelotModule]
 public class {{name}}Module(Plugin plugin, Config config) : Module<Plugin, Config>(plugin, config)

@@ -9,7 +9,7 @@
         },
         "path_to_destination": {
           "label": "テレポート後にイベントへの移動",
-          "tooltip": "BOCCHIパネル経由でテレポートした後、vnavmeshを使用して次のイベントに向かいます。"
+          "tooltip": "Crescent Isle Useful Toolパネル経由でテレポートした後、vnavmeshを使用して次のイベントに向かいます。"
         },
         "return_after_fate": {
           "label": "F.A.T.E.後にベースキャンプに戻る",

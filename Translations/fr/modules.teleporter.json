@@ -8,7 +8,7 @@
         },
         "path_to_destination": {
           "label": "Se diriger vers l'événement après la téléportation",
-          "tooltip": "Utilise vnavmesh pour se diriger vers l'événement suivant après la téléportation via le panel BOCCHI."
+          "tooltip": "Utilise vnavmesh pour se diriger vers l'événement suivant après la téléportation via le panel Crescent Isle Useful Tool."
         },
         "return_after_critical_encounter": {
           "label": "Retourner à la base après une confrontation critique",

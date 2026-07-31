@@ -9,7 +9,7 @@
         },
         "path_to_destination": {
           "label": "传送后自动前往事件地点",
-          "tooltip": "通过BOCCHI面板传送后，使用vnavmesh导航至下一个事件地点"
+          "tooltip": "通过Crescent Isle Useful Tool面板传送后，使用vnavmesh导航至下一个事件地点"
         },
         "return_after_fate": {
           "label": "FATE结束后返回营地",

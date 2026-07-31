@@ -1,6 +1,6 @@
 using Ocelot;
 
-namespace BOCCHI.Modules.{{name}};
+namespace CrescentIsleUsefulTool.Modules.{{name}};
 
 public class Panel
 {

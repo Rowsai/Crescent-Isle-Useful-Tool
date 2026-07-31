@@ -12,7 +12,7 @@ const generator = new Generator({
     stubRoot: path.join(__dirname, "/../stubs"),
     outputRoot: path.join(
         __dirname,
-        "/../BOCCHI",
+        "/../CrescentIsleUsefulTool",
         "Modules",
         name,
     ),

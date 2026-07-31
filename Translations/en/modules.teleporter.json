@@ -9,7 +9,7 @@
         },
         "path_to_destination": {
           "label": "Path to event after teleporting",
-          "tooltip": "Use vnavmesh to head to the next event after teleporting via the OCH panel."
+          "tooltip": "Use vnavmesh to head to the next event after teleporting via the Crescent Isle Useful Tool panel."
         },
         "return_after_fate": {
           "label": "Return to base after FATE",

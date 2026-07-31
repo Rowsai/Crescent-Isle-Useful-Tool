@@ -19,7 +19,7 @@ echo "Testing release: $IS_TESTING"
 # Create tag and release
 git tag "$TAG"
 git push origin master "$TAG"
-dotnet build -c Release
+dotnet build CrescentIsleUsefulTool/CrescentIsleUsefulTool.csproj -c Release
 
 if [ "$IS_TESTING" = true ]; then
    gh release create "$TAG" --title "$TAG" --generate-notes --prerelease
@@ -27,7 +27,7 @@ else
    gh release create "$TAG" --title "$TAG" --generate-notes
 fi
 
-gh release upload "$TAG" BOCCHI/bin/Release/BOCCHI/latest.zip --clobber
+gh release upload "$TAG" CrescentIsleUsefulTool/bin/Release/CrescentIsleUsefulTool/latest.zip --clobber
 
 # Update plugin manifest
 rm -rf plugins
