@@ -14,6 +14,25 @@ namespace BOCCHI.Windows;
 public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWindow(primaryPlugin, config)
 {
     private IModule? selectedConfigModule;
+    private bool windowThemePushed;
+
+    public override void PreDraw()
+    {
+        base.PreDraw();
+        CrescentTheme.PushWindowChrome();
+        windowThemePushed = true;
+    }
+
+    public override void PostDraw()
+    {
+        if (windowThemePushed)
+        {
+            CrescentTheme.PopWindowChrome();
+            windowThemePushed = false;
+        }
+
+        base.PostDraw();
+    }
 
     public override void PostInitialize()
     {

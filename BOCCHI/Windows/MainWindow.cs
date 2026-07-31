@@ -16,6 +16,25 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
 {
     private uint selectedTerritory;
     private uint previousTerritory;
+    private bool windowThemePushed;
+
+    public override void PreDraw()
+    {
+        base.PreDraw();
+        CrescentTheme.PushWindowChrome();
+        windowThemePushed = true;
+    }
+
+    public override void PostDraw()
+    {
+        if (windowThemePushed)
+        {
+            CrescentTheme.PopWindowChrome();
+            windowThemePushed = false;
+        }
+
+        base.PostDraw();
+    }
 
     public override void PostInitialize()
     {
@@ -33,6 +52,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
                 Plugin.Modules.GetModule<AutomatorModule>().DisableIllegalMode();
             },
             Icon = FontAwesomeIcon.Stop,
+            IconColor = CrescentTheme.AccentSoft,
             IconOffset = new Vector2(2, 2),
             ShowTooltip = () => ImGui.SetTooltip(I18N.T("windows.main.buttons.emergency_stop")),
         });
@@ -49,6 +69,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
                 AutomatorModule.ToggleIllegalMode(Plugin);
             },
             Icon = FontAwesomeIcon.Skull,
+            IconColor = CrescentTheme.AccentSoft,
             IconOffset = new Vector2(2, 2),
             ShowTooltip = () => ImGui.SetTooltip(I18N.T("windows.main.buttons.toggle_illegal_mode")),
         });

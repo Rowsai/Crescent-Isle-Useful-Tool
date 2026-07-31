@@ -10,6 +10,10 @@ namespace BOCCHI.Ui;
 /// </summary>
 public static class CrescentTheme
 {
+    private const int WindowChromeColorCount = 8;
+
+    private const int WindowChromeStyleVarCount = 2;
+
     public static readonly Vector4 Accent = new(0.18f, 0.66f, 1.00f, 1.00f);
 
     public static readonly Vector4 AccentSoft = new(0.38f, 0.79f, 1.00f, 1.00f);
@@ -43,6 +47,30 @@ public static class CrescentTheme
         ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(8f, 5f));
 
         return new ThemeScope();
+    }
+
+    /// <summary>
+    /// Applies colors before ImGui begins a plugin window. This also styles the
+    /// title bar, title-bar action buttons, menu bar, and built-in close button.
+    /// </summary>
+    public static void PushWindowChrome()
+    {
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.012f, 0.035f, 0.080f, 0.98f));
+        ImGui.PushStyleColor(ImGuiCol.TitleBg, new Vector4(0.018f, 0.090f, 0.190f, 1.00f));
+        ImGui.PushStyleColor(ImGuiCol.TitleBgActive, new Vector4(0.030f, 0.180f, 0.370f, 1.00f));
+        ImGui.PushStyleColor(ImGuiCol.TitleBgCollapsed, new Vector4(0.012f, 0.055f, 0.120f, 0.92f));
+        ImGui.PushStyleColor(ImGuiCol.MenuBarBg, new Vector4(0.020f, 0.105f, 0.220f, 1.00f));
+        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.055f, 0.205f, 0.390f, 1.00f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.090f, 0.360f, 0.650f, 1.00f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.120f, 0.500f, 0.860f, 1.00f));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 10f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 1.5f);
+    }
+
+    public static void PopWindowChrome()
+    {
+        ImGui.PopStyleVar(WindowChromeStyleVarCount);
+        ImGui.PopStyleColor(WindowChromeColorCount);
     }
 
     public readonly struct ThemeScope : IDisposable
