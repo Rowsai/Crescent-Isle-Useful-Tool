@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Text.Json;
 using System.Threading.Tasks;
 using BOCCHI.Chains;
+using BOCCHI.Data;
 using BOCCHI.Enums;
 using BOCCHI.Modules;
 using BOCCHI.Modules.Pathfinder;
@@ -232,7 +233,12 @@ public abstract class Hunter
                     OcelotUi.LabelledValue(I18N.T("hunter.distance_shard"), $"{distance:f2}");
                 }
             }
-        }, "現在地から近い順に巡回します。");
+        }, GetRouteDescription());
+    }
+
+    protected virtual string GetRouteDescription()
+    {
+        return "現在地から近い順に巡回します。";
     }
 
     protected virtual void Teardown()
@@ -251,33 +257,42 @@ public abstract class Hunter
     protected bool WalkToNodeHandler()
     {
         var destination = GetDestinationForCurrentStep();
+        var layoutDistance = Player.DistanceTo(destination);
+        var obj = layoutDistance <= GetDetectionRange()
+            ? GetValidObjects().FirstOrDefault(o => Vector3.Distance(destination, o.Position) <= 5f)
+            : null;
+        var movementDestination = obj?.Position ?? destination;
+
+        distance = Player.DistanceTo(movementDestination);
 
         if (!vnav.IsRunning())
         {
-            vnav.PathfindAndMoveTo(destination, false);
+            vnav.PathfindAndMoveTo(movementDestination, false);
         }
 
-        if (!Player.Mounted)
+        if (!Player.Mounted && distance > DISTANCE_TO_NODE_TO_USE)
         {
             StepProcessor.SubmitFront(ChainHelper.MountChain());
         }
 
-        distance = Player.DistanceTo(destination);
-        if (distance <= GetDetectionRange())
+        if (obj != null)
         {
-            var obj = GetValidObjects().FirstOrDefault(o => Vector3.Distance(destination, o.Position) <= 5f);
-
-            if (obj == null)
-            {
-                vnav.Stop();
-                return true;
-            }
-
             if (distance <= DISTANCE_TO_NODE_TO_USE)
             {
+                vnav.Stop();
                 StepProcessor.SubmitFront(GetInteractionChain(obj));
                 return true;
             }
+
+            return false;
+        }
+
+        if (layoutDistance <= GetDetectionRange())
+        {
+            // This placement is not active for the current player, or it has
+            // already been opened. Continue to the next internal coordinate.
+            vnav.Stop();
+            return true;
         }
 
         return distance <= DISTANCE_TO_NODE_TO_USE;
@@ -287,11 +302,12 @@ public abstract class Hunter
     {
         distance = 0;
         var inCombat = states.GetState() == State.InCombat;
+        var baseCamp = ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp;
 
         // If we are in combat, start running back to the base camp so we can escape combat
         if (inCombat && !vnav.IsRunning())
         {
-            vnav.PathfindAndMoveTo(Aethernet.BaseCamp.GetData().Position, false);
+            vnav.PathfindAndMoveTo(baseCamp.GetData().Position, false);
             return false;
         }
 
@@ -308,6 +324,8 @@ public abstract class Hunter
         StepProcessor.SubmitFront(ChainHelper.ReturnChain(new ReturnChainConfig
         {
             ApproachAetheryte = true,
+            ForceReturn = ZoneData.IsInNorthHorn(),
+            ApplyBuffs = false,
         }));
 
         return true;

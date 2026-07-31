@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using BOCCHI.ActionHelpers;
 using BOCCHI.Data;
 using BOCCHI.Pathfinding;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -23,6 +25,12 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 {
     private List<TreasureData.TreasureDatum> Treasure = [];
 
+    public int ExtractedLocationCount => Treasure.Count;
+
+    public int ExtractedBronzeCount => Treasure.Count(item => item.Type == TreasureData.BronzeSgbId);
+
+    public int ExtractedSilverCount => Treasure.Count(item => item.Type == TreasureData.SilverSgbId);
+
     protected override IEnumerable<IGameObject> GetValidObjects()
     {
         return Svc.Objects
@@ -31,7 +39,7 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                 ObjectKind: ObjectKind.Treasure,
                 IsDead: false,
                 IsTargetable: true,
-            } && o.IsValid());
+            } && o.IsValid() && IsRandomCoffer(o));
     }
 
     protected override Vector3 GetDestinationForCurrentStep()
@@ -46,11 +54,13 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
         if (layout == null)
         {
             Svc.Log.Warning("No active layout");
+            return CreateEmptyPathfinder();
         }
 
         if (!layout->InstancesByType.TryGetValue(InstanceType.Treasure, out var mapPtr, false))
         {
             Svc.Log.Warning("No active treasure map");
+            return CreateEmptyPathfinder();
         }
 
         foreach (ILayoutInstance* instance in mapPtr.Value->Values)
@@ -63,8 +73,13 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
             }
 
             var treasureRowId = Unsafe.Read<uint>((byte*)instance + 0x30);
-            var sgbId = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>().GetRow(treasureRowId).SGB.RowId;
-            if (sgbId != 1596 && sgbId != 1597)
+            if (!Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>().TryGetRow(treasureRowId, out var treasureRow))
+            {
+                continue;
+            }
+
+            var sgbId = treasureRow.SGB.RowId;
+            if (!TreasureData.IsRandomCofferType(sgbId))
             {
                 continue;
             }
@@ -72,7 +87,18 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
             Treasure.Add(new TreasureData.TreasureDatum(treasureRowId, position, sgbId));
         }
 
-        Treasure = Treasure.OrderBy(t => t.Id).ToList();
+        Treasure = Treasure
+            .GroupBy(item => item.Id)
+            .Select(group => group.First())
+            .OrderBy(item => item.Id)
+            .ToList();
+
+        Svc.Log.Info($"Extracted treasure placements from active layout: {Treasure.Count} total ({ExtractedBronzeCount} bronze, {ExtractedSilverCount} silver).");
+
+        if (ZoneData.IsInNorthHorn())
+        {
+            return new NorthHornPathfinder(Treasure, module.PluginConfig.PathfinderConfig.TeleportCost);
+        }
 
         return new Pathfinder(Treasure, module.PluginConfig.PathfinderConfig.ReturnCost, module.PluginConfig.PathfinderConfig.TeleportCost);
     }
@@ -81,6 +107,8 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     {
         return () => Chain.Create()
             .BreakIf(() => !GetValidObjects().Any(o => Vector3.Distance(o.Position, obj.Position) <= DISTANCE_TO_NODE_TO_USE))
+            .ConditionalThen(_ => Player.Mounted, _ => Actions.Unmount.Cast())
+            .Wait(500)
             .Then(new TaskManagerTask(() =>
             {
                 if (!EzThrottler.Throttle("ChestInteract", 250))
@@ -88,9 +116,14 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                     return false;
                 }
 
-                if (Player.DistanceTo(obj) > DISTANCE_TO_NODE_TO_USE)
+                if (!obj.IsValid() || !GetValidObjects().Any(o => Vector3.Distance(o.Position, obj.Position) <= DISTANCE_TO_NODE_TO_USE))
                 {
                     return true;
+                }
+
+                if (Player.DistanceTo(obj) > DISTANCE_TO_NODE_TO_USE)
+                {
+                    return false;
                 }
 
                 unsafe
@@ -101,11 +134,45 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                     TargetSystem.Instance()->InteractWithObject(gameObject);
                     return instance->Flags.HasFlag(FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags.Opened);
                 }
-            }));
+            }, new TaskManagerConfiguration { TimeLimitMS = 10000, ShowError = false }));
     }
 
     protected override List<uint> GetValidNodes(int max)
     {
+        if (ZoneData.IsInNorthHorn())
+        {
+            return Treasure.Select(item => item.Id).Distinct().ToList();
+        }
+
         return TreasureData.Levels.Where(node => node.Value <= max).Select(node => node.Key).ToList();
+    }
+
+    protected override string GetRouteDescription()
+    {
+        return ZoneData.IsInNorthHorn()
+            ? "北部ベースキャンプから開始し、内部データで検出した青銅・白銀の宝箱を近い順に巡回します。"
+            : base.GetRouteDescription();
+    }
+
+    private IPathfinder CreateEmptyPathfinder()
+    {
+        return new EmptyTreasurePathfinder();
+    }
+
+    private static bool IsRandomCoffer(IGameObject obj)
+    {
+        return Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>().TryGetRow(obj.BaseId, out var row)
+               && TreasureData.IsRandomCofferType(row.SGB.RowId);
+    }
+
+    private sealed class EmptyTreasurePathfinder : IPathfinder
+    {
+        public PathfinderState State { get; private set; } = PathfinderState.FileLoaded;
+
+        public Task<List<PathfinderStep>> FindPath(Vector3 start, List<uint> nodes)
+        {
+            State = PathfinderState.PathfindingDone;
+            return Task.FromResult<List<PathfinderStep>>([]);
+        }
     }
 }

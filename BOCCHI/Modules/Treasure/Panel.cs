@@ -1,4 +1,5 @@
 using System.Numerics;
+using BOCCHI.Data;
 using BOCCHI.Ui;
 using ECommons.GameHelpers;
 using Dalamud.Bindings.ImGui;
@@ -12,6 +13,25 @@ public class Panel
         CrescentTheme.Card("Treasure", module.T("panel.title"), () =>
         {
             DrawActiveChests(module);
+
+            if (ZoneData.IsInNorthHorn())
+            {
+                ImGui.Spacing();
+                ImGui.TextDisabled("内部データから取得した巡回地点");
+                if (module.Hunter.ExtractedLocationCount == 0)
+                {
+                    ImGui.TextUnformatted("ハント開始時に座標を取得します。");
+                }
+                else
+                {
+                    ImGui.TextColored(TreasureModule.Bronze, $"青銅 {module.Hunter.ExtractedBronzeCount}");
+                    ImGui.SameLine();
+                    ImGui.TextColored(TreasureModule.Silver, $"白銀 {module.Hunter.ExtractedSilverCount}");
+                    ImGui.SameLine();
+                    ImGui.TextDisabled($"合計 {module.Hunter.ExtractedLocationCount}");
+                }
+            }
+
             ImGui.Spacing();
 
             if (module.Treasures.Count <= 0)

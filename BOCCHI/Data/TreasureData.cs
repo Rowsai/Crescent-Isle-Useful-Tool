@@ -5,7 +5,16 @@ namespace BOCCHI.Data;
 
 public static class TreasureData
 {
+    public const uint BronzeSgbId = 1596;
+
+    public const uint SilverSgbId = 1597;
+
     public readonly record struct TreasureDatum(uint Id, Vector3 Position, uint Type);
+
+    public static bool IsRandomCofferType(uint sgbId)
+    {
+        return sgbId is BronzeSgbId or SilverSgbId;
+    }
 
     public readonly static Dictionary<uint, uint> Levels = new()
     {

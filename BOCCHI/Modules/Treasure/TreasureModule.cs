@@ -31,7 +31,7 @@ public class TreasureModule(Plugin _plugin, Config config) : Module(_plugin, con
 
     public readonly TreasureTracker Tracker = new();
 
-    private TreasureHunt hunter = null!;
+    internal TreasureHunt Hunter { get; private set; } = null!;
 
     public List<Treasure> Treasures
     {
@@ -44,13 +44,13 @@ public class TreasureModule(Plugin _plugin, Config config) : Module(_plugin, con
 
     public override void PostInitialize()
     {
-        hunter = new TreasureHunt(this);
+        Hunter = new TreasureHunt(this);
     }
 
     public override void Update(UpdateContext context)
     {
         Tracker.Tick(Plugin);
-        hunter.Update();
+        Hunter.Update();
     }
 
     public override void Render(RenderContext context)
@@ -64,7 +64,7 @@ public class TreasureModule(Plugin _plugin, Config config) : Module(_plugin, con
 
         if (Config.ShouldEnableTreasureHunt)
         {
-            hunter.Draw(this);
+            Hunter.Draw(this);
         }
 
         return true;

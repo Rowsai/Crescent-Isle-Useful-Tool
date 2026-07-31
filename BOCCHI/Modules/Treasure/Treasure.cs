@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Numerics;
+using BOCCHI.Data;
 using BOCCHI.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
@@ -70,9 +71,9 @@ public class Treasure(IGameObject obj)
     {
         switch (GetModelId() ?? 0)
         {
-            case 1597:
+            case TreasureData.SilverSgbId:
                 return TreasureType.Silver;
-            case 1596:
+            case TreasureData.BronzeSgbId:
                 return TreasureType.Bronze;
             default:
                 return TreasureType.Unknown;
