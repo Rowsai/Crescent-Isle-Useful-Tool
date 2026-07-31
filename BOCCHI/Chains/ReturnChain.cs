@@ -4,6 +4,7 @@ using System.Numerics;
 using BOCCHI.ActionHelpers;
 using BOCCHI.Data;
 using BOCCHI.Enums;
+using BOCCHI.Ipc;
 using BOCCHI.Modules.Buff;
 using BOCCHI.Modules.Buff.Chains;
 using BOCCHI.Modules.Teleporter;
@@ -48,7 +49,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
             chain.Then(new PathfindAndMoveToChain(vnav, GetAetherytePosition()));
             chain.Then(_ => lifestream.GetActiveCustomAetheryte() != 0 && Player.DistanceTo(position) <= AethernetData.DISTANCE);
-            chain.Then(_ => vnav.Stop());
+            chain.Then(_ => { VnavmeshIpc.TryStop(vnav); });
         }
 
 
@@ -68,7 +69,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
         chain.PathfindAndMoveTo(vnav, closestKnowledgeCrystal!.Position);
         chain.WaitUntilNear(vnav, closestKnowledgeCrystal!.Position, AethernetData.DISTANCE);
-        chain.Then(_ => vnav.Stop());
+        chain.Then(_ => { VnavmeshIpc.TryStop(vnav); });
 
         chain.Then(new AllBuffsChain(buffs));
 

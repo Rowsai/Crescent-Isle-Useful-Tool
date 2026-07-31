@@ -3,6 +3,7 @@ using System.Numerics;
 using BOCCHI.Chains;
 using BOCCHI.Data;
 using BOCCHI.Enums;
+using BOCCHI.Ipc;
 using BOCCHI.Modules.CriticalEncounters;
 using BOCCHI.Modules.Fates;
 using BOCCHI.Modules.StateManager;
@@ -18,7 +19,10 @@ public class Automator
 {
     private static bool IsChainActive
     {
-        get => ChainManager.Queues.Count > 0;
+        // ChainManager.Queues contains idle queues for a short time. Counting
+        // dictionary entries made this true almost permanently and prevented
+        // the selected FATE/CE chain from ever being submitted.
+        get => Plugin.Chain.IsRunning || Plugin.Chain.QueueCount > 0;
     }
 
     public Activity? Activity { get; private set; } = null;
@@ -31,14 +35,42 @@ public class Automator
     // beside the aetheryte.
     private bool returningAfterActivity = false;
 
+    public string RuntimeStatus { get; private set; } = "停止中";
+
+    public void SetRuntimeStatus(string status)
+    {
+        RuntimeStatus = status;
+    }
+
     public void PostUpdate(AutomatorModule module, IFramework framework)
     {
-        var vnav = module.GetIPCSubscriber<VNavmesh>();
-        var lifestream = module.GetIPCSubscriber<Lifestream>();
-        if (!vnav.IsReady() || !lifestream.IsReady())
+        if (!module.TryGetIPCSubscriber<VNavmesh>(out var vnav) || vnav == null)
         {
+            SetRuntimeStatus("vnavmeshプラグインの起動を待っています。");
             return;
         }
+
+        if (!VnavmeshIpc.IsOperational(vnav, out var navigationWaitingReason))
+        {
+            SetRuntimeStatus(navigationWaitingReason);
+            return;
+        }
+
+        if (!module.TryGetIPCSubscriber<Lifestream>(out var lifestream) || lifestream == null)
+        {
+            SetRuntimeStatus("Lifestreamプラグインの起動を待っています。");
+            return;
+        }
+
+        if (!LifestreamIpc.IsOperational(lifestream, out var lifestreamWaitingReason))
+        {
+            SetRuntimeStatus(lifestreamWaitingReason);
+            return;
+        }
+
+        SetRuntimeStatus(Activity == null
+            ? GetMonitoringStatus(module)
+            : $"{Activity.GetName()}：{Activity.state.ToLabel()}");
 
         var states = module.GetModule<StateManagerModule>();
         if (Activity == null)
@@ -102,7 +134,7 @@ public class Automator
             }
 
             Plugin.Chain.Abort();
-            vnav.Stop();
+            VnavmeshIpc.TryStop(vnav);
             Activity = null;
         }
 
@@ -121,8 +153,9 @@ public class Automator
                 idleTime = 0;
                 returningAfterActivity = false;
                 Plugin.Chain.Abort();
-                vnav.Stop();
+                VnavmeshIpc.TryStop(vnav);
                 Svc.Log.Info($"Selected priority activity: {Activity.GetName()}");
+                SetRuntimeStatus($"{Activity.GetName()}を検知しました。移動を開始します。");
             }
         }
 
@@ -140,6 +173,7 @@ public class Automator
             }
 
             Plugin.Chain.Submit(chain);
+            SetRuntimeStatus($"{Activity.GetName()}：{Activity.state.ToLabel()}");
             return;
         }
 
@@ -236,6 +270,11 @@ public class Automator
 
         foreach (var fate in candidates)
         {
+            if (fate.CurrentProgress >= 100)
+            {
+                continue;
+            }
+
             if (!IsFateEnabled(module, fate.Id))
             {
                 continue;
@@ -256,6 +295,20 @@ public class Automator
         }
 
         return null;
+    }
+
+    private static string GetMonitoringStatus(AutomatorModule module)
+    {
+        var fateCount = module.TryGetModule<FatesModule>(out var fates) && fates != null
+            ? fates.fates.Values.Count(fate => fate.CurrentProgress < 100 && IsFateEnabled(module, fate.Id))
+            : 0;
+        var criticalCount = module.TryGetModule<CriticalEncountersModule>(out var critical) && critical != null
+            ? critical.CriticalEncounters.Values.Count(encounter =>
+                encounter.State == DynamicEventState.Register &&
+                IsCriticalEncounterEnabled(module, encounter.DynamicEventId))
+            : 0;
+
+        return $"アクティビティ監視中（FATE {fateCount}件／CE {criticalCount}件）";
     }
 
     private static bool IsCriticalEncounterEnabled(AutomatorModule module, uint eventId)
@@ -287,7 +340,7 @@ public class Automator
     private void CompleteActivity(Activity completedActivity, AutomatorModule module, VNavmesh vnav)
     {
         Plugin.Chain.Abort();
-        vnav.Stop();
+        VnavmeshIpc.TryStop(vnav);
         if (module.Config.ShouldToggleAiProvider)
         {
             module.Config.AiProvider.Off();

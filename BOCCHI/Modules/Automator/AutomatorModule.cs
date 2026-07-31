@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using BOCCHI.Data;
+using BOCCHI.Ipc;
 using ECommons.DalamudServices;
 using Ocelot;
 using Ocelot.IPC;
@@ -18,7 +19,9 @@ public class AutomatorModule : Module
 
     public override bool IsEnabled
     {
-        get => Config.IsPropertyEnabled(nameof(Config.Enabled));
+        // Keep the module updating while dependencies are still starting so
+        // illegal mode can remain ON and resume automatically when IPC is ready.
+        get => Config.Enabled;
     }
 
     public readonly Automator automator = new();
@@ -76,6 +79,9 @@ public class AutomatorModule : Module
     {
         var wasDisabled = !Config.Enabled;
         Config.Enabled = true;
+        automator.Refresh();
+        automator.SetRuntimeStatus("FATE／CEと移動プラグインの状態を確認しています。");
+        PluginConfig.Save();
 
         if (wasDisabled)
         {
@@ -88,7 +94,9 @@ public class AutomatorModule : Module
         var wasEnabled = Config.Enabled;
         Config.Enabled = false;
         automator.Refresh();
-        Plugin.IPC.GetSubscriber<VNavmesh>().Stop();
+        automator.SetRuntimeStatus("停止中");
+        TryGetIPCSubscriber<VNavmesh>(out var vnav);
+        VnavmeshIpc.TryStop(vnav);
         Plugin.Chain.Abort();
         if (Config.ShouldToggleAiProvider)
         {
@@ -99,5 +107,7 @@ public class AutomatorModule : Module
         {
             Svc.Chat.Print(T("messages.off"));
         }
+
+        PluginConfig.Save();
     }
 }

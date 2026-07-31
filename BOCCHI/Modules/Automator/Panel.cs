@@ -23,6 +23,10 @@ public class Panel
                 );
 
                 ImGui.Spacing();
+                ImGui.TextDisabled("実行状態");
+                ImGui.TextWrapped(module.automator.RuntimeStatus);
+
+                ImGui.Spacing();
                 ImGui.TextDisabled(module.T("panel.activity.label"));
             try
             {

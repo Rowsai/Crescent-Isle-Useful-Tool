@@ -1,6 +1,7 @@
 using System.Linq;
 using BOCCHI.Data;
 using BOCCHI.Enums;
+using BOCCHI.Ipc;
 using BOCCHI.Modules.Teleporter;
 using Dalamud.Game.ClientState.Conditions;
 using ECommons.GameHelpers;
@@ -31,7 +32,7 @@ public class TeleportChain(Aethernet aethernet, Lifestream lifestream, Teleporte
             chain.Then(_ => lifestream.GetActiveCustomAetheryte() != 0 && Player.DistanceTo(nearest.Position) < AethernetData.DISTANCE);
         }
 
-        chain.Then(_ => vnav.Stop());
+        chain.Then(_ => { VnavmeshIpc.TryStop(vnav); });
         chain.Then(_ => lifestream.AethernetTeleportByPlaceNameId((uint)aethernet));
         chain.WaitToCycleCondition(ConditionFlag.BetweenAreas);
         // Mount if we should mount and not pathfind, otherwise let the pathfinder handle it

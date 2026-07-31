@@ -8,7 +8,9 @@ using System.Threading.Tasks;
 using BOCCHI.Chains;
 using BOCCHI.Data;
 using BOCCHI.Enums;
+using BOCCHI.Ipc;
 using BOCCHI.Modules;
+using BOCCHI.Modules.Automator;
 using BOCCHI.Modules.Pathfinder;
 using BOCCHI.Modules.StateManager;
 using BOCCHI.Ui;
@@ -33,6 +35,8 @@ public abstract class Hunter
 
     protected VNavmesh vnav;
 
+    protected readonly Module ownerModule;
+
     protected PathfinderConfig config;
 
     protected bool running;
@@ -46,6 +50,8 @@ public abstract class Hunter
     protected float distance = 0f;
 
     protected Stopwatch stopwatch = new();
+
+    protected string runtimeStatus = "停止中";
 
     protected PathfinderStep CurrentStep
     {
@@ -63,6 +69,7 @@ public abstract class Hunter
 
     protected Hunter(Module module)
     {
+        ownerModule = module;
         states = module.GetModule<StateManagerModule>();
         vnav = module.GetIPCSubscriber<VNavmesh>();
         config = module.PluginConfig.PathfinderConfig;
@@ -91,24 +98,71 @@ public abstract class Hunter
 
     protected abstract List<uint> GetValidNodes(int max);
 
+    protected virtual bool IsPathfinderDataReady()
+    {
+        return true;
+    }
+
+    protected virtual bool HasAvailablePathfinderNodes()
+    {
+        return true;
+    }
+
     public void Update()
     {
-        if (!running || Plugin.Chain.IsRunning)
+        if (!running)
         {
+            return;
+        }
+
+        if (!VnavmeshIpc.IsOperational(vnav, out var navigationWaitingReason))
+        {
+            runtimeStatus = navigationWaitingReason;
+            return;
+        }
+
+        if (!ownerModule.TryGetIPCSubscriber<Lifestream>(out var lifestream) || lifestream == null)
+        {
+            runtimeStatus = "Lifestreamプラグインの起動を待っています。";
+            return;
+        }
+
+        if (!LifestreamIpc.IsOperational(lifestream, out var lifestreamWaitingReason))
+        {
+            runtimeStatus = lifestreamWaitingReason;
+            return;
+        }
+
+        if (HasQueueWork(Plugin.Chain))
+        {
+            runtimeStatus = "ほかの移動処理が完了するのを待っています。";
             return;
         }
 
         if (pathfinder == null && Steps.Count <= 0)
         {
+            if (!IsPathfinderDataReady())
+            {
+                runtimeStatus = "ゲーム内部の座標データを読み込んでいます。";
+                return;
+            }
+
             pathfinder = CreatePathfinder();
+            if (!HasAvailablePathfinderNodes())
+            {
+                pathfinder = null;
+                runtimeStatus = "青銅・白銀の宝箱座標を取得しています。";
+                return;
+            }
         }
 
+        runtimeStatus = Steps.Count == 0 ? "巡回経路を作成しています。" : "宝箱を巡回しています。";
         MaintainWatcherChain();
     }
 
     private void MaintainWatcherChain()
     {
-        if (Plugin.Chain.IsRunning)
+        if (HasQueueWork(Plugin.Chain))
         {
             return;
         }
@@ -145,7 +199,7 @@ public abstract class Hunter
             return;
         }
 
-        if (StepProcessor.IsRunning)
+        if (HasQueueWork(StepProcessor))
         {
             return;
         }
@@ -189,15 +243,28 @@ public abstract class Hunter
                     running = false;
                     stepIndex = 0;
                     Steps.Clear();
-                    vnav.Stop();
+                    VnavmeshIpc.TryStop(vnav);
                     Plugin.Chain.Abort();
                     StepProcessor.Abort();
                     pathfinder = null;
                 }
                 else
                 {
+                    if (ownerModule.TryGetModule<AutomatorModule>(out var automator) && automator?.Config.Enabled == true)
+                    {
+                        automator.DisableIllegalMode();
+                    }
+
                     stopwatch.Restart();
+                    runtimeStatus = "開始準備中です。";
                 }
+            }
+
+            if (running)
+            {
+                ImGui.Spacing();
+                ImGui.TextDisabled("実行状態");
+                ImGui.TextWrapped(runtimeStatus);
             }
 
             if (stopwatch.Elapsed > TimeSpan.Zero)
@@ -247,7 +314,7 @@ public abstract class Hunter
         running = false;
         stepIndex = 0;
         Steps.Clear();
-        vnav.Stop();
+        VnavmeshIpc.TryStop(vnav);
         Plugin.Chain.Abort();
         StepProcessor.Abort();
         pathfinder = null;
@@ -265,9 +332,10 @@ public abstract class Hunter
 
         distance = Player.DistanceTo(movementDestination);
 
-        if (!vnav.IsRunning())
+        VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+        if (!isRunning)
         {
-            vnav.PathfindAndMoveTo(movementDestination, false);
+            VnavmeshIpc.TryPathfindAndMoveTo(vnav, movementDestination, false);
         }
 
         if (!Player.Mounted && distance > DISTANCE_TO_NODE_TO_USE)
@@ -279,7 +347,7 @@ public abstract class Hunter
         {
             if (distance <= DISTANCE_TO_NODE_TO_USE)
             {
-                vnav.Stop();
+                VnavmeshIpc.TryStop(vnav);
                 StepProcessor.SubmitFront(GetInteractionChain(obj));
                 return true;
             }
@@ -291,7 +359,7 @@ public abstract class Hunter
         {
             // This placement is not active for the current player, or it has
             // already been opened. Continue to the next internal coordinate.
-            vnav.Stop();
+            VnavmeshIpc.TryStop(vnav);
             return true;
         }
 
@@ -305,15 +373,16 @@ public abstract class Hunter
         var baseCamp = ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp;
 
         // If we are in combat, start running back to the base camp so we can escape combat
-        if (inCombat && !vnav.IsRunning())
+        VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+        if (inCombat && !isRunning)
         {
-            vnav.PathfindAndMoveTo(baseCamp.GetData().Position, false);
+            VnavmeshIpc.TryPathfindAndMoveTo(vnav, baseCamp.GetData().Position, false);
             return false;
         }
 
-        if (!inCombat && vnav.IsRunning())
+        if (!inCombat && isRunning)
         {
-            vnav.Stop();
+            VnavmeshIpc.TryStop(vnav);
         }
 
         if (inCombat)
@@ -335,9 +404,10 @@ public abstract class Hunter
     {
         var destination = CurrentStep.Aethernet.GetData().Position;
 
-        if (!vnav.IsRunning())
+        VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+        if (!isRunning)
         {
-            vnav.PathfindAndMoveTo(destination, false);
+            VnavmeshIpc.TryPathfindAndMoveTo(vnav, destination, false);
         }
 
         if (!Player.Mounted)
@@ -354,5 +424,10 @@ public abstract class Hunter
         distance = 0;
         StepProcessor.SubmitFront(ChainHelper.TeleportChain(CurrentStep.Aethernet));
         return true;
+    }
+
+    private static bool HasQueueWork(ChainQueue queue)
+    {
+        return queue.IsRunning || queue.QueueCount > 0;
     }
 }

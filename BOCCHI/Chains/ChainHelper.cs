@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using BOCCHI.Enums;
+using BOCCHI.Ipc;
 using BOCCHI.Modules.Mount;
 using BOCCHI.Modules.Mount.Chains;
 using BOCCHI.Modules.Teleporter;
@@ -89,7 +90,7 @@ public class ChainHelper
                 Chain.Create()
                     .Then(new PathfindAndMoveToChain(vnav, destination))
                     .WaitUntilNear(vnav, destination, distance)
-                    .Then(_ => vnav.Stop())
+                    .Then(_ => { VnavmeshIpc.TryStop(vnav); })
             );
     }
 
@@ -101,7 +102,7 @@ public class ChainHelper
                 Chain.Create()
                     .Then(_ => vnav.FollowPath([destination], false))
                     .WaitUntilNear(vnav, destination, distance)
-                    .Then(_ => vnav.Stop())
+                    .Then(_ => { VnavmeshIpc.TryStop(vnav); })
             );
     }
 

@@ -1,5 +1,6 @@
 ﻿using BOCCHI.ActionHelpers;
 using BOCCHI.Data;
+using BOCCHI.Ipc;
 using BOCCHI.Modules.CriticalEncounters;
 using BOCCHI.Modules.StateManager;
 using Dalamud.Game.ClientState.Objects.Enums;
@@ -72,7 +73,7 @@ public class CriticalEncounter : Activity
             {
                 if (vnav.IsRunning())
                 {
-                    vnav.Stop();
+                    VnavmeshIpc.TryStop(vnav);
                 }
 
                 return true;

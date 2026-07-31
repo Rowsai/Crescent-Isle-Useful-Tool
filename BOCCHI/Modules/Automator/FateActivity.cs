@@ -3,6 +3,7 @@ using System.Linq;
 using System.Numerics;
 using BOCCHI.ActionHelpers;
 using BOCCHI.Data;
+using BOCCHI.Ipc;
 using BOCCHI.Modules.Fates;
 using BOCCHI.Modules.StateManager;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -52,7 +53,7 @@ public class FateActivity(EventData data, Lifestream lifestream, VNavmesh vnav, 
                     {
                         Actions.TryUnmount();
 
-                        vnav.Stop();
+                        VnavmeshIpc.TryStop(vnav);
 
                         return true;
                     }

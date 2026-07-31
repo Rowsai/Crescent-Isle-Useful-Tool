@@ -103,6 +103,17 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
         return new Pathfinder(Treasure, module.PluginConfig.PathfinderConfig.ReturnCost, module.PluginConfig.PathfinderConfig.TeleportCost);
     }
 
+    protected override unsafe bool IsPathfinderDataReady()
+    {
+        var layout = LayoutWorld.Instance()->ActiveLayout;
+        return layout != null && layout->InstancesByType.TryGetValue(InstanceType.Treasure, out _, false);
+    }
+
+    protected override bool HasAvailablePathfinderNodes()
+    {
+        return Treasure.Count > 0;
+    }
+
     protected override Func<Chain> GetInteractionChain(IGameObject obj)
     {
         return () => Chain.Create()
