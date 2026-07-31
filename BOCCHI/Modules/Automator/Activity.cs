@@ -29,6 +29,8 @@ public abstract class Activity
 
     public ActivityState state = ActivityState.Idle;
 
+    public bool HasParticipated { get; private set; }
+
     protected readonly Dictionary<ActivityState, Func<StateManagerModule, Func<Chain>?>> handlers;
 
     protected Activity(EventData data, Lifestream lifestream, VNavmesh vnav, AutomatorModule module)
@@ -49,7 +51,7 @@ public abstract class Activity
         var states = module.GetModule<StateManagerModule>();
         if (states.GetState() == State.InFate || states.GetState() == State.InCriticalEncounter)
         {
-            state = ActivityState.Participating;
+            SetState(ActivityState.Participating);
         }
     }
 
@@ -80,26 +82,30 @@ public abstract class Activity
         return () =>
         {
             var activityShard = GetAethernetData();
+            var baseCamp = (ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp).GetData();
 
             var isFate = data.Type == EventType.Fate;
             module.Debug($"Travelling through nearest destination aetheryte: {activityShard.Aethernet}");
 
             var chain = Chain.Create("Illegal:Pathfinding")
                 .ConditionalWait(_ => !isFate && module.Config.ShouldDelayCriticalEncounters, Random.Shared.Next(10000, 15001))
-                .Then(ChainHelper.ReturnChain(new ReturnChainConfig
+                .ConditionalThen(_ => !ZoneData.IsNearBaseCamp(), ChainHelper.ReturnChain(new ReturnChainConfig
                 {
                     ForceReturn = true,
                     ApproachAetheryte = true,
+                    ApplyBuffs = false,
                 }))
+                .ConditionalThen(_ => baseCamp.DistanceToPlayer() > AethernetData.DISTANCE,
+                    ChainHelper.PathfindToAndWait(baseCamp.Position, AethernetData.DISTANCE))
                 .ConditionalThen(_ => activityShard.DistanceToPlayer() > AethernetData.DISTANCE, ChainHelper.TeleportChain(activityShard.Aethernet))
                 .Debug("Waiting for lifestream to not be 'busy'")
                 .Then(new TaskManagerTask(() => !lifestream.IsBusy(), new TaskManagerConfiguration { TimeLimitMS = 30000 }))
-                .Then(new PathfindingChain(vnav, GetPosition(), data))
-                .ConditionalThen(_ => ShouldMountToPathfindTo(GetPosition()), ChainHelper.MountChain());
+                .ConditionalThen(_ => ShouldMountToPathfindTo(GetPosition()), ChainHelper.MountChain())
+                .Then(new PathfindingChain(vnav, GetPosition(), data));
 
             chain
                 .Then(GetPathfindingWatcher(states))
-                .Then(_ => state = GetPostPathfindingState());
+                .Then(_ => SetState(GetPostPathfindingState()));
 
             return chain;
         };
@@ -125,7 +131,7 @@ public abstract class Activity
 
                     return states.GetState() == State.Idle;
                 }, new TaskManagerConfiguration { TimeLimitMS = int.MaxValue }))
-                .Then(_ => state = ActivityState.Done);
+                .Then(_ => SetState(ActivityState.Done));
         };
     }
 
@@ -140,6 +146,15 @@ public abstract class Activity
     }
 
     protected abstract bool IsActivityTarget(IBattleNpc obj);
+
+    protected void SetState(ActivityState nextState)
+    {
+        state = nextState;
+        if (nextState == ActivityState.Participating)
+        {
+            HasParticipated = true;
+        }
+    }
 
     private AethernetData GetAethernetData()
     {

@@ -25,7 +25,8 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
     {
         chain.BreakIf(() => Player.IsDead);
 
-        var shouldReturn = config.ForceReturn || GetCostToReturn() < GetCostToWalk();
+        var shouldReturn = !ZoneData.IsNearBaseCamp() &&
+                           (config.ForceReturn || GetCostToReturn() < GetCostToWalk());
 
         if (shouldReturn)
         {
@@ -34,7 +35,10 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         }
 
         chain.Then(ChainHelper.TreasureSightChain(config.UpdateTreasureCount));
-        chain.Then(ApplyBuffs);
+        if (config.ApplyBuffs)
+        {
+            chain.Then(ApplyBuffs);
+        }
 
         if (config.ApproachAetheryte)
         {

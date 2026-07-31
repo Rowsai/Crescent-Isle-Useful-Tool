@@ -21,11 +21,6 @@ public class CriticalEncounter : Activity
 {
     private readonly CriticalEncountersModule source;
 
-    private DynamicEvent Encounter
-    {
-        get => source.CriticalEncounters[data.Id];
-    }
-
     private bool finalDestination = false;
 
     public CriticalEncounter(EventData data, Lifestream lifestream, VNavmesh vnav, AutomatorModule module, CriticalEncountersModule source)
@@ -83,8 +78,10 @@ public class CriticalEncounter : Activity
                 return true;
             }
 
-            var critical = module.GetModule<CriticalEncountersModule>();
-            var encounter = critical.CriticalEncounters[data.Id];
+            if (!source.CriticalEncounters.TryGetValue(data.Id, out var encounter))
+            {
+                throw new Exception("The critical encounter is no longer available.");
+            }
 
             if (encounter.State != DynamicEventState.Register)
             {
@@ -118,8 +115,10 @@ public class CriticalEncounter : Activity
                             throw new Exception("The critical encounter appears to have started without you.");
                         }
 
-                        var critical = module.GetModule<CriticalEncountersModule>();
-                        var encounter = critical.CriticalEncounters[data.Id];
+                        if (!source.CriticalEncounters.TryGetValue(data.Id, out var encounter))
+                        {
+                            throw new Exception("The critical encounter is no longer available.");
+                        }
 
                         if (encounter.State == DynamicEventState.Battle &&
                             states.GetState() != State.InCriticalEncounter)
@@ -143,19 +142,24 @@ public class CriticalEncounter : Activity
                     {
                         TimeLimitMS = 180000,
                     }))
-                .Then(_ => state = ActivityState.Participating);
+                .Then(_ => SetState(ActivityState.Participating));
         };
     }
 
     public override unsafe bool IsValid()
     {
-        if (Encounter.State == DynamicEventState.Register)
+        if (!source.CriticalEncounters.TryGetValue(data.Id, out var encounter))
+        {
+            return false;
+        }
+
+        if (encounter.State == DynamicEventState.Register)
         {
             return true;
         }
 
         var dec = DynamicEventContainer.GetInstance();
-        return dec != null && Encounter.DynamicEventId == dec->CurrentEventId;
+        return dec != null && encounter.DynamicEventId == dec->CurrentEventId;
     }
 
     protected override float GetRadius()
@@ -167,12 +171,16 @@ public class CriticalEncounter : Activity
 
     protected override Vector3 GetPosition()
     {
-        return Encounter.MapMarker.Position;
+        return source.CriticalEncounters.TryGetValue(data.Id, out var encounter)
+            ? encounter.MapMarker.Position
+            : Player.Position;
     }
 
     public override string GetName()
     {
-        return Encounter.Name.ToString();
+        return source.CriticalEncounters.TryGetValue(data.Id, out var encounter)
+            ? encounter.Name.ToString()
+            : data.InternalName;
     }
 
     private bool IsCloseToZone(float radius = 50f)

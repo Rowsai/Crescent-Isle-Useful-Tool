@@ -1,7 +1,7 @@
 using System.Numerics;
+using BOCCHI.Ui;
 using ECommons.GameHelpers;
 using Dalamud.Bindings.ImGui;
-using Ocelot.Ui;
 
 namespace BOCCHI.Modules.Treasure;
 
@@ -9,15 +9,14 @@ public class Panel
 {
     public void Draw(TreasureModule module)
     {
-        OcelotUi.Title($"{module.T("panel.title")}:");
-
-        OcelotUi.Indent(() =>
+        CrescentTheme.Card("Treasure", module.T("panel.title"), () =>
         {
             DrawActiveChests(module);
+            ImGui.Spacing();
 
             if (module.Treasures.Count <= 0)
             {
-                ImGui.TextUnformatted(module.T("panel.none"));
+                CrescentTheme.EmptyState(module.T("panel.none"));
                 return;
             }
 
@@ -29,42 +28,43 @@ public class Panel
                 }
 
                 var pos = treasure.GetPosition();
-
-                ImGui.TextUnformatted($"{treasure.GetName()}");
-                OcelotUi.Indent(() =>
-                {
-                    ImGui.TextUnformatted($"({pos.X:F2}, {pos.Y:F2}, {pos.Z:F2})");
-                    ImGui.TextUnformatted($"({Vector3.Distance(Player.Position, pos)})");
-                });
+                ImGui.TextUnformatted(treasure.GetName());
+                ImGui.SameLine();
+                ImGui.TextDisabled($"X:{pos.X:F1} Y:{pos.Z:F1}  /  {Vector3.Distance(Player.Position, pos):F1}m");
             }
-        });
+        }, "取得可能数と現在地付近の宝箱を表示します。", TreasureModule.Bronze);
     }
 
     private void DrawActiveChests(TreasureModule module)
     {
         if (!module.Tracker.CountInitialised)
         {
-            ImGui.TextDisabled("取得可能な宝箱数: 計測待ち");
+            CrescentTheme.EmptyState("取得可能な宝箱数を計測しています。");
             return;
         }
 
-        ImGui.TextColored(TreasureModule.Bronze, "取得可能な宝箱数");
-        OcelotUi.LabelledValue(module.T("panel.active_bronze.label"), $"{module.Tracker.BronzeChests}/30");
-        if (module.Config.ShowPercentageActiveTreasureCount)
+        if (!ImGui.BeginTable("##TreasureCounts", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.SizingStretchSame))
         {
-            var percentage = module.Tracker.BronzeChests / 30f * 100f;
-            ImGui.SameLine();
-            ImGui.TextUnformatted($"({percentage:f2}%)");
+            return;
         }
 
-        OcelotUi.LabelledValue(module.T("panel.active_silver.label"), $"{module.Tracker.SilverChests}/8");
-        if (module.Config.ShowPercentageActiveTreasureCount)
-        {
-            var percentage = module.Tracker.SilverChests / 8f * 100f;
-            ImGui.SameLine();
-            ImGui.TextUnformatted($"({percentage:f2}%)");
-        }
+        DrawCount(module.T("panel.active_bronze.label"), module.Tracker.BronzeChests, 30, TreasureModule.Bronze, module.Config.ShowPercentageActiveTreasureCount);
+        DrawCount(module.T("panel.active_silver.label"), module.Tracker.SilverChests, 8, TreasureModule.Silver, module.Config.ShowPercentageActiveTreasureCount);
+        ImGui.TableNextColumn();
+        ImGui.TextDisabled(module.T("panel.remaining.label"));
+        ImGui.TextColored(CrescentTheme.AccentSoft, module.Tracker.RemainingChests.ToString());
+        ImGui.EndTable();
+    }
 
-        OcelotUi.LabelledValue(module.T("panel.remaining.label"), module.Tracker.RemainingChests.ToString());
+    private static void DrawCount(string label, int value, int maximum, Vector4 color, bool showPercentage)
+    {
+        ImGui.TableNextColumn();
+        ImGui.TextDisabled(label);
+        ImGui.TextColored(color, $"{value} / {maximum}");
+        if (showPercentage)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($"({value / (float)maximum * 100f:F1}%)");
+        }
     }
 }

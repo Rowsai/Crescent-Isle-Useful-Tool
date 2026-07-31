@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using BOCCHI.Data;
 using BOCCHI.Modules.Teleporter;
+using BOCCHI.Ui;
 using Dalamud.Bindings.ImGui;
 using Ocelot.Ui;
 
@@ -11,12 +12,11 @@ public class Panel
 {
     public void Draw(FatesModule module)
     {
-        OcelotUi.Title($"{module.T("panel.title")}:");
-        OcelotUi.Indent(() =>
+        CrescentTheme.Card("ActiveFates", module.T("panel.title"), () =>
         {
             if (module.tracker.Fates.Count <= 0)
             {
-                ImGui.TextUnformatted(module.T("panel.none"));
+                CrescentTheme.EmptyState(module.T("panel.none"));
                 return;
             }
 
@@ -30,7 +30,9 @@ public class Panel
 
                 try
                 {
-                    ImGui.TextUnformatted($"{fate.Name} ({fate.CurrentProgress}%)");
+                ImGui.TextUnformatted(fate.Name);
+                ImGui.SameLine();
+                ImGui.TextColored(CrescentTheme.AccentSoft, $"{fate.CurrentProgress}%");
                 }
                 catch (AccessViolationException)
                 {
@@ -64,6 +66,6 @@ public class Panel
                     OcelotUi.VSpace();
                 }
             }
-        });
+        }, "発生中のFATEと進行状況", CrescentTheme.Accent);
     }
 }

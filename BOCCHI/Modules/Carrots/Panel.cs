@@ -1,5 +1,5 @@
+using BOCCHI.Ui;
 using Dalamud.Bindings.ImGui;
-using Ocelot.Ui;
 
 namespace BOCCHI.Modules.Carrots;
 
@@ -7,12 +7,11 @@ public class Panel
 {
     public void Draw(CarrotsModule module)
     {
-        OcelotUi.Title($"{module.T("panel.title")}:");
-        OcelotUi.Indent(() =>
+        CrescentTheme.Card("Carrots", module.T("panel.title"), () =>
         {
             if (module.carrots.Count <= 0)
             {
-                ImGui.TextUnformatted(module.T("panel.none"));
+                CrescentTheme.EmptyState(module.T("panel.none"));
                 return;
             }
 
@@ -24,8 +23,10 @@ public class Panel
                 }
 
                 var pos = carrot.GetPosition();
-                ImGui.TextUnformatted($"{module.T("panel.label")}: ({pos.X:F2}, {pos.Y:F2}, {pos.Z:F2})");
+                ImGui.TextUnformatted(module.T("panel.label"));
+                ImGui.SameLine();
+                ImGui.TextDisabled($"X:{pos.X:F1} Y:{pos.Z:F1}");
             }
-        });
+        }, "近くのにんじんを検知します。");
     }
 }

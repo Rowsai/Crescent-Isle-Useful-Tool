@@ -1,7 +1,7 @@
 using System;
 using BOCCHI.Data;
+using BOCCHI.Ui;
 using Dalamud.Bindings.ImGui;
-using Ocelot.Ui;
 
 namespace BOCCHI.Modules.MagicPot;
 
@@ -14,30 +14,36 @@ public class Panel
             return;
         }
 
-        OcelotUi.Title($"{module.T("panel.title")}:");
-        OcelotUi.Indent(() =>
+        CrescentTheme.Card("MagicPot", module.T("panel.title"), () =>
         {
             if (module.IsNorthPotActive)
             {
-                ImGui.TextColored(BOCCHI.Ui.CrescentTheme.AccentSoft, module.T("panel.active"));
-                return;
+                CrescentTheme.Status("検知状態", module.T("panel.active"), CrescentTheme.Warning);
             }
-
-            var nextSpawnUtc = module.NextSpawnUtc;
-            if (nextSpawnUtc == null)
+            else
             {
-                ImGui.TextDisabled(module.T("panel.awaiting_observation"));
-                return;
+                CrescentTheme.Status("検知状態", "次回発生を監視中", CrescentTheme.AccentSoft);
             }
 
-            var remaining = nextSpawnUtc.Value - DateTime.UtcNow;
-            if (remaining <= TimeSpan.Zero)
+            ImGui.Spacing();
+            if (module.OldestPlayerTimeMinutes != null)
             {
-                ImGui.TextColored(BOCCHI.Ui.CrescentTheme.AccentSoft, module.T("panel.due"));
-                return;
+                ImGui.TextDisabled("基準となる最古時間");
+                ImGui.SameLine();
+                ImGui.TextUnformatted($"{module.OldestPlayerTimeMinutes}分");
             }
 
-            OcelotUi.LabelledValue(module.T("panel.next_spawn"), remaining.ToString(@"mm\:ss"));
-        });
+            var remaining = module.NextSpawnUtc - DateTime.UtcNow;
+            remaining = remaining <= TimeSpan.Zero ? TimeSpan.Zero : remaining;
+
+            ImGui.TextDisabled(module.T("panel.next_spawn"));
+            ImGui.SameLine();
+            ImGui.TextColored(CrescentTheme.AccentSoft, remaining.ToString(@"mm\:ss"));
+            if (remaining == TimeSpan.Zero)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(CrescentTheme.Warning, module.T("panel.due"));
+            }
+        }, "初回は最古時間179分を基準に20分後、以降は30分周期で推定します。", CrescentTheme.Warning);
     }
 }

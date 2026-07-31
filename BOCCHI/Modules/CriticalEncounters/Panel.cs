@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using BOCCHI.Data;
 using BOCCHI.Modules.Teleporter;
+using BOCCHI.Ui;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using Dalamud.Bindings.ImGui;
 using Ocelot.Ui;
@@ -12,13 +13,12 @@ public class Panel
 {
     public void Draw(CriticalEncountersModule module)
     {
-        OcelotUi.Title($"{module.T("panel.title")}:");
-        OcelotUi.Indent(() =>
+        CrescentTheme.Card("CriticalEncounters", module.T("panel.title"), () =>
         {
             var active = module.CriticalEncounters.Values.Count(ev => ev.State != DynamicEventState.Inactive);
             if (active <= 0)
             {
-                ImGui.TextUnformatted(module.T("panel.none"));
+                CrescentTheme.EmptyState(module.T("panel.none"));
                 return;
             }
 
@@ -99,7 +99,7 @@ public class Panel
 
                 OcelotUi.Indent(() => EventIconRenderer.Drops(data, module.PluginConfig.EventDropConfig));
             }
-        });
+        }, "参加可能なCEと開始・進行状況", CrescentTheme.Warning);
     }
 
 

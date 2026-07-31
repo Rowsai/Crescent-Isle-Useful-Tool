@@ -124,6 +124,25 @@ public static class ZoneData
         return AethernetData.All().OrderBy((data) => Vector3.Distance(position, data.Position)).First()!.Aethernet;
     }
 
+    /// <summary>
+    /// The no-return area covers both the Demi-Déjion landing point and the
+    /// base-camp aetheryte.  Movement inside this area must be performed on
+    /// foot; Demi-Déjion is never cast here.
+    /// </summary>
+    public static bool IsNearBaseCamp(float radius = 30f)
+    {
+        var player = Svc.Objects.LocalPlayer;
+        if (player == null ||
+            !Aetherytes.TryGetValue(Svc.ClientState.TerritoryType, out var aetheryte) ||
+            !StartingLocations.TryGetValue(Svc.ClientState.TerritoryType, out var landing))
+        {
+            return false;
+        }
+
+        return Vector3.Distance(player.Position, aetheryte) <= radius ||
+               Vector3.Distance(player.Position, landing) <= radius;
+    }
+
     public static IReadOnlyList<Aethernet> GetCurrentAethernets()
     {
         return Aethernets.TryGetValue(Svc.ClientState.TerritoryType, out var aethernet) ? aethernet : [];

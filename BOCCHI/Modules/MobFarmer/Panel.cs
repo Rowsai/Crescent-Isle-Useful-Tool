@@ -1,7 +1,7 @@
 using System.Linq;
+using BOCCHI.Ui;
 using Dalamud.Bindings.ImGui;
 using Ocelot;
-using Ocelot.Ui;
 
 namespace BOCCHI.Modules.MobFarmer;
 
@@ -9,8 +9,7 @@ public class Panel
 {
     public void Draw(MobFarmerModule module)
     {
-        OcelotUi.Title("Mob Farmer:");
-        OcelotUi.Indent(() =>
+        CrescentTheme.Card("MobFarmer", "MOB FARMER", () =>
         {
             if (ImGui.Button(module.Farmer.Running ? I18N.T("generic.label.stop") : I18N.T("generic.label.start")))
             {
@@ -19,11 +18,18 @@ public class Panel
 
             if (module.Farmer.Running)
             {
-                OcelotUi.LabelledValue("Phase", module.Farmer.StateMachine.State);
+                ImGui.SameLine();
+                ImGui.TextColored(CrescentTheme.Success, module.Farmer.StateMachine.State.ToString());
             }
 
-            OcelotUi.LabelledValue("Not Engaged", module.Scanner.NotInCombat.Count());
-            OcelotUi.LabelledValue("Engaged", module.Scanner.InCombat.Count());
-        });
+            ImGui.Spacing();
+            ImGui.TextDisabled("未交戦");
+            ImGui.SameLine();
+            ImGui.TextUnformatted(module.Scanner.NotInCombat.Count().ToString());
+            ImGui.SameLine();
+            ImGui.TextDisabled("  /  交戦中");
+            ImGui.SameLine();
+            ImGui.TextColored(CrescentTheme.Warning, module.Scanner.InCombat.Count().ToString());
+        }, "周辺エネミーの自動戦闘状態");
     }
 }

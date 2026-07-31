@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Numerics;
 using BOCCHI.Chains;
 using BOCCHI.Data;
 using BOCCHI.Enums;
@@ -22,7 +23,7 @@ public class Automator
 
     public Activity? Activity { get; private set; } = null;
 
-    private int idleTime = 0;
+    private double idleTime = 0;
 
     // A completion return is a single operation: cast Demi-Déjion at the
     // activity, arrive at base camp, then approach the aetheryte.  Keeping
@@ -50,7 +51,15 @@ public class Automator
             if (states.GetState() == State.InCriticalEncounter)
             {
                 var critical = module.GetModule<CriticalEncountersModule>();
-                var encounter = critical.CriticalEncounters.Values.Last(ev => ev.State != DynamicEventState.Inactive);
+                var encounters = critical.CriticalEncounters.Values
+                    .Where(ev => ev.State != DynamicEventState.Inactive)
+                    .ToList();
+                if (encounters.Count == 0)
+                {
+                    return;
+                }
+
+                var encounter = encounters[^1];
                 var data = EventData.GetCriticalEncounter(encounter.DynamicEventId);
                 Activity = new CriticalEncounter(data, lifestream, vnav, module, critical);
 
@@ -77,27 +86,21 @@ public class Automator
 
         if (Activity != null && Activity.state == ActivityState.Done)
         {
-            var completedActivity = Activity;
-            Activity = null;
-            idleTime = 0;
-
-            if (!returningAfterActivity && !IsNearBaseCamp())
-            {
-                returningAfterActivity = true;
-                Svc.Log.Info($"{completedActivity.GetName()} complete: casting Demi Dejon once and returning to base camp.");
-                Plugin.Chain.Submit(ChainHelper.ReturnChain(new ReturnChainConfig
-                {
-                    ForceReturn = true,
-                    ApproachAetheryte = true,
-                    UpdateTreasureCount = true,
-                }));
-            }
-
+            CompleteActivity(Activity, module, vnav);
             return;
         }
 
         if (Activity != null && !Activity.IsValid())
         {
+            // Tracker removal and the state transition to Idle are not atomic.
+            // Waiting for both used to lose the completion return when the
+            // event disappeared one frame before StateManager reached Idle.
+            if (Activity.HasParticipated)
+            {
+                CompleteActivity(Activity, module, vnav);
+                return;
+            }
+
             Plugin.Chain.Abort();
             vnav.Stop();
             Activity = null;
@@ -109,8 +112,10 @@ public class Automator
         // event's target point when it appears.
         if (Activity == null)
         {
-            Activity = module.Config.ShouldDoCriticalEncounters ? FindCriticalEncounter(module, lifestream, vnav) : null;
-            Activity ??= module.Config.ShouldDoFates ? FindFate(module, lifestream, vnav) : null;
+            // Explicit priority: Magic Pot > Critical Encounter > ordinary FATE.
+            Activity = module.Config.ShouldDoFates ? FindFate(module, lifestream, vnav, FateSelection.MagicPot) : null;
+            Activity ??= module.Config.ShouldDoCriticalEncounters ? FindCriticalEncounter(module, lifestream, vnav) : null;
+            Activity ??= module.Config.ShouldDoFates ? FindFate(module, lifestream, vnav, FateSelection.Ordinary) : null;
             if (Activity != null)
             {
                 idleTime = 0;
@@ -138,11 +143,6 @@ public class Automator
             return;
         }
 
-        if (!module.Config.ShouldDoFates && !module.Config.ShouldDoCriticalEncounters)
-        {
-            return;
-        }
-
         if (returningAfterActivity)
         {
             if (IsChainActive)
@@ -150,7 +150,7 @@ public class Automator
                 return;
             }
 
-            if (IsNearBaseCamp())
+            if (ZoneData.IsNearBaseCamp())
             {
                 returningAfterActivity = false;
                 return;
@@ -162,15 +162,6 @@ public class Automator
             returningAfterActivity = false;
         }
 
-        // A CE can already be preparing or in progress by the time the
-        // automator evaluates it. Do not cast Return while the player is
-        // walking there manually or waiting for registration to reopen.
-        if (HasActiveCriticalEncounter(module))
-        {
-            idleTime = 0;
-            return;
-        }
-
         var baseCamp = (ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp).GetData();
         if (baseCamp.DistanceToPlayer() <= AethernetData.DISTANCE)
         {
@@ -178,7 +169,16 @@ public class Automator
             return;
         }
 
-        idleTime += framework.UpdateDelta.Milliseconds;
+        // Near base camp, walk to the waiting point. Demi-Déjion is forbidden
+        // in this area even if the character is not yet beside the aetheryte.
+        if (ZoneData.IsNearBaseCamp())
+        {
+            idleTime = 0;
+            Plugin.Chain.Submit(ChainHelper.PathfindToAndWait(baseCamp.Position, AethernetData.DISTANCE));
+            return;
+        }
+
+        idleTime += framework.UpdateDelta.TotalMilliseconds;
         if (idleTime > 3000)
         {
             idleTime = 0;
@@ -217,16 +217,37 @@ public class Automator
         return null;
     }
 
-    private static FateActivity? FindFate(AutomatorModule module, Lifestream lifestream, VNavmesh vnav)
+    private static FateActivity? FindFate(
+        AutomatorModule module,
+        Lifestream lifestream,
+        VNavmesh vnav,
+        FateSelection selection = FateSelection.Any)
     {
         if (!module.TryGetModule<FatesModule>(out var source) || source == null)
         {
             return null;
         }
 
-        foreach (var fate in source.fates.Values)
+        var candidates = selection == FateSelection.Any && Svc.Objects.LocalPlayer != null
+            ? source.fates.Values
+                .OrderBy(fate => Vector3.Distance(Svc.Objects.LocalPlayer.Position, fate.StartPosition) <= fate.Radius ? 0 : 1)
+                .ThenBy(fate => Vector3.Distance(Svc.Objects.LocalPlayer.Position, fate.StartPosition))
+            : source.fates.Values.OrderBy(fate => fate.Id);
+
+        foreach (var fate in candidates)
         {
             if (!IsFateEnabled(module, fate.Id))
+            {
+                continue;
+            }
+
+            var isMagicPot = fate.IsPotFate() || NorthHornContent.IsMagicPotFate(fate.Id);
+            if (selection == FateSelection.MagicPot && !isMagicPot)
+            {
+                continue;
+            }
+
+            if (selection == FateSelection.Ordinary && isMagicPot)
             {
                 continue;
             }
@@ -246,7 +267,9 @@ public class Automator
 
         // North Horn's ordinary CEs are 49-63. The following IDs are Forked
         // Tower events and must not be handled as normal travel activities.
-        return ZoneData.IsInNorthHorn() && eventId is >= 49 and <= 63;
+        return ZoneData.IsInNorthHorn() &&
+               eventId is >= 49 and <= 63 &&
+               module.Config.IsNorthCriticalEncounterEnabled(eventId);
     }
 
     private static bool IsFateEnabled(AutomatorModule module, uint fateId)
@@ -256,20 +279,46 @@ public class Automator
             return enabled;
         }
 
-        return ZoneData.IsInNorthHorn() && fateId is >= 2072 and <= 2084;
+        return ZoneData.IsInNorthHorn() &&
+               fateId is >= 2072 and <= 2084 &&
+               module.Config.IsNorthFateEnabled(fateId);
     }
 
-    private static bool HasActiveCriticalEncounter(AutomatorModule module)
+    private void CompleteActivity(Activity completedActivity, AutomatorModule module, VNavmesh vnav)
     {
-        return module.TryGetModule<CriticalEncountersModule>(out var source)
-            && source != null
-            && source.CriticalEncounters.Values.Any(encounter => encounter.State != DynamicEventState.Inactive);
+        Plugin.Chain.Abort();
+        vnav.Stop();
+        if (module.Config.ShouldToggleAiProvider)
+        {
+            module.Config.AiProvider.Off();
+        }
+
+        Activity = null;
+        idleTime = 0;
+
+        if (returningAfterActivity || ZoneData.IsNearBaseCamp())
+        {
+            return;
+        }
+
+        returningAfterActivity = true;
+        var name = string.IsNullOrWhiteSpace(completedActivity.data.InternalName)
+            ? "Activity"
+            : completedActivity.data.InternalName;
+        Svc.Log.Info($"{name} complete: casting Demi Dejon once and returning to base camp.");
+        Plugin.Chain.Submit(ChainHelper.ReturnChain(new ReturnChainConfig
+        {
+            ForceReturn = true,
+            ApproachAetheryte = true,
+            UpdateTreasureCount = true,
+        }));
     }
 
-    private static bool IsNearBaseCamp()
+    private enum FateSelection
     {
-        var baseCamp = (ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp).GetData();
-        return baseCamp.DistanceToPlayer() <= AethernetData.DISTANCE;
+        Any,
+        MagicPot,
+        Ordinary,
     }
 
     public void Refresh()

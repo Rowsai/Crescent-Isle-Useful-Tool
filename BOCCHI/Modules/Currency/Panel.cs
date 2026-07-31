@@ -1,7 +1,7 @@
 using Dalamud.Interface;
+using BOCCHI.Ui;
 using ECommons.ImGuiMethods;
 using Dalamud.Bindings.ImGui;
-using Ocelot.Ui;
 
 namespace BOCCHI.Modules.Currency;
 
@@ -9,11 +9,13 @@ public class Panel
 {
     public void Draw(CurrencyModule module)
     {
-        OcelotUi.Title($"{module.T("panel.title")}:");
-        OcelotUi.Indent(() =>
+        CrescentTheme.Card("Currency", module.T("panel.title"), () =>
         {
-            if (ImGui.BeginTable("CurrencyData##OCH", 3, ImGuiTableFlags.SizingFixedFit))
+            if (ImGui.BeginTable("CurrencyData##OCH", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
             {
+                ImGui.TableSetupColumn("Reset", ImGuiTableColumnFlags.WidthFixed, 42f);
+                ImGui.TableSetupColumn("Currency", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("PerHour", ImGuiTableColumnFlags.WidthFixed, 110f);
                 // Silver
                 ImGui.TableNextRow();
 
@@ -24,10 +26,10 @@ public class Panel
                 }
 
                 ImGui.TableNextColumn();
-                OcelotUi.Title(module.T("panel.silver.label"));
+                ImGui.TextUnformatted(module.T("panel.silver.label"));
 
                 ImGui.TableNextColumn();
-                ImGui.TextUnformatted(module.Tracker.GetSilverPerHour().ToString("F2"));
+                ImGui.TextColored(CrescentTheme.AccentSoft, module.Tracker.GetSilverPerHour().ToString("F2"));
 
                 // Gold
                 ImGui.TableNextRow();
@@ -39,13 +41,13 @@ public class Panel
                 }
 
                 ImGui.TableNextColumn();
-                OcelotUi.Title(module.T("panel.gold.label"));
+                ImGui.TextUnformatted(module.T("panel.gold.label"));
 
                 ImGui.TableNextColumn();
-                ImGui.TextUnformatted(module.Tracker.GetGoldPerHour().ToString("F2"));
+                ImGui.TextColored(CrescentTheme.Warning, module.Tracker.GetGoldPerHour().ToString("F2"));
 
                 ImGui.EndTable();
             }
-        });
+        }, "直近1時間あたりの獲得量");
     }
 }

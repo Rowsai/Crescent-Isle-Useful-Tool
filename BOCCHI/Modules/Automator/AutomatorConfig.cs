@@ -6,6 +6,13 @@ namespace BOCCHI.Modules.Automator;
 
 public class AutomatorConfig : ModuleConfig
 {
+    // North Horn entries are rendered as a compact, tabbed catalogue in the
+    // config window instead of expanding the generated settings page by 28
+    // additional rows. Missing entries default to enabled.
+    public Dictionary<uint, bool> NorthCriticalEncounters { get; set; } = [];
+
+    public Dictionary<uint, bool> NorthFates { get; set; } = [];
+
     [Checkbox]
     [Illegal]
     [RequiredPlugin("Lifestream", "vnavmesh")]
@@ -419,5 +426,15 @@ public class AutomatorConfig : ModuleConfig
             { 1976, ShouldDoPersistentPots },
             { 1977, ShouldDoPleadingPots },
         };
+    }
+
+    public bool IsNorthCriticalEncounterEnabled(uint id)
+    {
+        return !NorthCriticalEncounters.TryGetValue(id, out var enabled) || enabled;
+    }
+
+    public bool IsNorthFateEnabled(uint id)
+    {
+        return !NorthFates.TryGetValue(id, out var enabled) || enabled;
     }
 }

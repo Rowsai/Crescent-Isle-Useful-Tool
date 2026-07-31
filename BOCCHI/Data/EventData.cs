@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using BOCCHI.Enums;
 
@@ -33,14 +34,19 @@ public struct EventData
     /// </summary>
     public static EventData GetFate(uint id)
     {
-        return Fates.TryGetValue(id, out var data)
-            ? data
-            : new EventData
-            {
-                Id = id,
-                Type = EventType.Fate,
-                InternalName = $"FATE {id}",
-            };
+        if (Fates.TryGetValue(id, out var data))
+        {
+            return data;
+        }
+
+        var north = NorthHornContent.Fates.FirstOrDefault(fate => fate.Id == id);
+        return new EventData
+        {
+            Id = id,
+            Type = EventType.Fate,
+            InternalName = north.Id == id ? north.EnglishName : $"FATE {id}",
+            IsPot = north.Id == id && north.IsMagicPot,
+        };
     }
 
     /// <summary>
@@ -49,14 +55,18 @@ public struct EventData
     /// </summary>
     public static EventData GetCriticalEncounter(uint id)
     {
-        return CriticalEncounters.TryGetValue(id, out var data)
-            ? data
-            : new EventData
-            {
-                Id = id,
-                Type = EventType.CriticalEncounter,
-                InternalName = $"Critical Encounter {id}",
-            };
+        if (CriticalEncounters.TryGetValue(id, out var data))
+        {
+            return data;
+        }
+
+        var north = NorthHornContent.CriticalEncounters.FirstOrDefault(encounter => encounter.Id == id);
+        return new EventData
+        {
+            Id = id,
+            Type = EventType.CriticalEncounter,
+            InternalName = north.Id == id ? north.EnglishName : $"Critical Encounter {id}",
+        };
     }
 
     public readonly static Dictionary<uint, EventData> Fates = new()
@@ -214,7 +224,7 @@ public struct EventData
             {
                 Id = 2072,
                 Type = EventType.Fate,
-                InternalName = "North Horn Magic Pot",
+                InternalName = "Daylight Pottery",
                 IsPot = true,
                 StartPosition = new Vector3(233f, 7.729229f, -470f),
             }
@@ -225,7 +235,7 @@ public struct EventData
             {
                 Id = 2073,
                 Type = EventType.Fate,
-                InternalName = "North Horn Magic Pot",
+                InternalName = "In a Pot of Bother",
                 IsPot = true,
                 StartPosition = new Vector3(-505.2822f, 53.14409f, 244.041f),
             }

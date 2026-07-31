@@ -1,4 +1,5 @@
 using BOCCHI.Data;
+using BOCCHI.Ui;
 using Dalamud.Bindings.ImGui;
 using Ocelot.Ui;
 
@@ -13,14 +14,13 @@ public class Panel
             return;
         }
 
-        OcelotUi.Title("Forked Tower:");
-        OcelotUi.Indent(() =>
+        CrescentTheme.Card("ForkedTower", "FORKED TOWER", () =>
         {
             var state = OcelotUi.LabelledValue("Tower ID", module.TowerRun.Hash);
             if (state == UiState.Hovered)
             {
                 ImGui.SetTooltip("This is unique to you.");
             }
-        });
+        }, "塔内セッション情報");
     }
 }

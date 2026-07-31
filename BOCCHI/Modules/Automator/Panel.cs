@@ -2,96 +2,169 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using BOCCHI.Data;
+using BOCCHI.Ui;
 using Dalamud.Bindings.ImGui;
-using Ocelot.Ui;
 
 namespace BOCCHI.Modules.Automator;
 
 public class Panel
 {
-    private static readonly string[] NorthHornEncounters =
-    [
-        "変化の使い魔『メタモルフォア』",
-        "求道の人造人間『エルムギガース』",
-        "絶島の誘拐者『アブダクター』",
-        "大食の呪鬼『アルゴル』",
-        "魔導兵団『タイニーメイジ』",
-        "覚醒の多頭竜『マギ・ヒドラ』",
-        "反逆の使い魔『アトラス・カーバンクル』",
-        "禁忌の魔道書『アルバデル』",
-        "死霊使いの亡霊『マギ・ネクロマンサー』",
-        "呪いを継ぐ者『ベイルマギア』",
-        "白の守護者『アラバスターブレード』",
-        "魔女の複製体『カロフィステリ・ダブル』",
-        "暗紅の魔竜『ルブルムドラゴン』",
-        "？？？（ヘルハウンド）",
-    ];
-
     public void Draw(AutomatorModule module)
     {
-        OcelotUi.Title($"{module.T("panel.title")}:");
-        OcelotUi.Indent(() =>
-        {
-            OcelotUi.Title($"{module.T("panel.activity.label")}:");
+        CrescentTheme.Card(
+            "IllegalModeStatus",
+            module.T("panel.title"),
+            () =>
+            {
+                CrescentTheme.Status(
+                    "稼働ステータス",
+                    module.IsEnabled ? "ON" : "OFF",
+                    module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted
+                );
+
+                ImGui.Spacing();
+                ImGui.TextDisabled(module.T("panel.activity.label"));
             try
             {
                 var name = module.automator.Activity?.GetName() ?? module.T("panel.activity.none");
-                ImGui.SameLine();
                 ImGui.TextUnformatted(name);
             }
             catch (AccessViolationException)
             {
-                return;
+                    CrescentTheme.EmptyState(module.T("panel.activity.none"));
             }
 
-            OcelotUi.Title($"{module.T("panel.activity_state.label")}:");
-            ImGui.SameLine();
-            ImGui.TextUnformatted(module.automator.Activity?.state.ToLabel() ?? module.T("panel.activity_state.none"));
-        });
-
-        DrawSupportedCriticalEncounters();
+                ImGui.Spacing();
+                ImGui.TextDisabled(module.T("panel.activity_state.label"));
+                ImGui.TextColored(
+                    module.automator.Activity == null ? CrescentTheme.Muted : CrescentTheme.AccentSoft,
+                    module.automator.Activity?.state.ToLabel() ?? module.T("panel.activity_state.none")
+                );
+            },
+            "マジックポット → CE → FATE の優先順で移動します。",
+            module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted
+        );
     }
 
-    private static void DrawSupportedCriticalEncounters()
+    /// <summary>
+    /// North Horn content belongs on the illegal-mode configuration page,
+    /// not on the main status page.  The generated South Horn settings remain
+    /// above this compact two-tab catalogue.
+    /// </summary>
+    public void DrawConfigurationCatalog(AutomatorModule module)
     {
-        OcelotUi.Title("不正モード対応 CE:");
-        if (!ImGui.BeginTabBar("##AutomatorEncounterList"))
+        ImGui.TextColored(CrescentTheme.AccentSoft, "北征編 不正モード対象");
+        ImGui.TextDisabled("自動移動の対象を選択できます。チェックを外した項目は無視されます。");
+        ImGui.Spacing();
+
+        if (!ImGui.BeginTabBar("##NorthHornIllegalModeCatalog"))
         {
             return;
         }
 
-        if (ImGui.BeginTabItem("南征編 (South Horn)"))
+        var changed = false;
+        if (ImGui.BeginTabItem("CE（15件）"))
         {
-            var southHorn = EventData.CriticalEncounters.Values
-                .Where(data => data.Id is >= 33 and <= 47)
-                .OrderBy(data => data.Id)
-                .Select(data => data.InternalName);
-            DrawEncounterTable(southHorn);
+            changed |= DrawBulkControls("NorthCE", NorthHornContent.CriticalEncounters, module.Config.NorthCriticalEncounters);
+            changed |= DrawActivityTable(
+                "NorthCriticalEncounters",
+                NorthHornContent.CriticalEncounters,
+                module.Config.NorthCriticalEncounters,
+                module.Config.IsNorthCriticalEncounterEnabled
+            );
             ImGui.EndTabItem();
         }
 
-        if (ImGui.BeginTabItem("北征編 (North Horn)"))
+        if (ImGui.BeginTabItem("FATE（13件）"))
         {
-            DrawEncounterTable(NorthHornEncounters);
+            changed |= DrawBulkControls("NorthFATE", NorthHornContent.Fates, module.Config.NorthFates);
+            changed |= DrawActivityTable(
+                "NorthFates",
+                NorthHornContent.Fates,
+                module.Config.NorthFates,
+                module.Config.IsNorthFateEnabled
+            );
             ImGui.EndTabItem();
         }
 
         ImGui.EndTabBar();
+
+        if (changed)
+        {
+            module.PluginConfig.Save();
+        }
     }
 
-    private static void DrawEncounterTable(IEnumerable<string> encounters)
+    private static bool DrawActivityTable(
+        string id,
+        IReadOnlyList<NorthHornContent.ActivityInfo> activities,
+        IDictionary<uint, bool> settings,
+        Func<uint, bool> isEnabled)
     {
-        if (!ImGui.BeginTable("##SupportedEncounters", 2, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.RowBg))
+        var columnCount = ImGui.GetContentRegionAvail().X >= 720f ? 2 : 1;
+        var flags = ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchSame;
+        if (!ImGui.BeginTable($"##{id}", columnCount, flags))
         {
-            return;
+            return false;
         }
 
-        foreach (var encounter in encounters)
+        var changed = false;
+        foreach (var activity in activities)
         {
             ImGui.TableNextColumn();
-            ImGui.TextWrapped(encounter);
+            var enabled = isEnabled(activity.Id);
+            if (ImGui.Checkbox($"##{id}_{activity.Id}", ref enabled))
+            {
+                settings[activity.Id] = enabled;
+                changed = true;
+            }
+
+            ImGui.SameLine();
+            if (activity.IsMagicPot)
+            {
+                ImGui.TextColored(CrescentTheme.Warning, "[MAGIC POT]");
+                ImGui.SameLine();
+            }
+
+            ImGui.TextWrapped(activity.JapaneseName);
+            ImGui.TextDisabled(activity.EnglishName);
+            ImGui.TextColored(CrescentTheme.Muted, $"{activity.Location}   ID:{activity.Id}");
         }
 
         ImGui.EndTable();
+        return changed;
+    }
+
+    private static bool DrawBulkControls(
+        string id,
+        IReadOnlyList<NorthHornContent.ActivityInfo> activities,
+        IDictionary<uint, bool> settings)
+    {
+        var changed = false;
+        ImGui.TextDisabled($"有効 {activities.Count(activity => !settings.TryGetValue(activity.Id, out var enabled) || enabled)} / {activities.Count}");
+        ImGui.SameLine();
+        if (ImGui.SmallButton($"すべて有効##{id}"))
+        {
+            foreach (var activity in activities)
+            {
+                settings[activity.Id] = true;
+            }
+
+            changed = true;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton($"すべて無効##{id}"))
+        {
+            foreach (var activity in activities)
+            {
+                settings[activity.Id] = false;
+            }
+
+            changed = true;
+        }
+
+        ImGui.Spacing();
+        return changed;
     }
 }

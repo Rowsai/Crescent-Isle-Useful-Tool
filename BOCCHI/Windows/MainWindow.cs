@@ -106,17 +106,30 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
 
     private void DrawHeader(uint currentTerritory)
     {
-        ImGui.TextColored(CrescentTheme.AccentSoft, "CRESCENT ISLE");
-        ImGui.SameLine();
-        ImGui.TextDisabled("USEFUL TOOL");
-        ImGui.SameLine(ImGui.GetWindowWidth() - 155f);
+        var flags = ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.PadOuterX;
+        if (!ImGui.BeginTable("##DashboardHeader", 2, flags))
+        {
+            return;
+        }
+
+        ImGui.TableSetupColumn("Identity", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthFixed, 230f);
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+        ImGui.TextColored(CrescentTheme.AccentSoft, "CRESCENT ISLE USEFUL TOOL");
+        ImGui.TextDisabled("OCCULT CRESCENT OPERATIONS DASHBOARD");
+
+        ImGui.TableNextColumn();
         var area = currentTerritory == ZoneData.NORTHHORN ? "NORTH HORN" : "SOUTH HORN";
         ImGui.TextColored(CrescentTheme.Accent, $"● {area}");
-        var illegalModeEnabled = Plugin.Modules.GetModule<AutomatorModule>().IsEnabled;
-        ImGui.TextDisabled("不正モード:");
-        ImGui.SameLine();
-        ImGui.TextColored(illegalModeEnabled ? CrescentTheme.AccentSoft : CrescentTheme.Muted, illegalModeEnabled ? "ON" : "OFF");
-        ImGui.Separator();
+        var automator = Plugin.Modules.GetModule<AutomatorModule>();
+        CrescentTheme.Status(
+            "不正モード",
+            automator.IsEnabled ? "ON" : "OFF",
+            automator.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted
+        );
+        ImGui.EndTable();
+        ImGui.Spacing();
     }
 
     private void DrawAreaTab(string label, uint territoryId, bool isCurrentArea, bool forceSelected, RenderContext context)
@@ -135,7 +148,11 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
         }
         else
         {
-            ImGui.TextUnformatted("このタブの機能は、該当エリアにいる間に利用できます。");
+            CrescentTheme.Card(
+                $"InactiveArea_{territoryId}",
+                label,
+                () => CrescentTheme.EmptyState("このエリアへ移動すると、監視情報と操作機能が表示されます。")
+            );
         }
 
         ImGui.EndTabItem();

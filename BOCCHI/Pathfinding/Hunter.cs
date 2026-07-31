@@ -10,6 +10,7 @@ using BOCCHI.Enums;
 using BOCCHI.Modules;
 using BOCCHI.Modules.Pathfinder;
 using BOCCHI.Modules.StateManager;
+using BOCCHI.Ui;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.GameHelpers;
@@ -176,8 +177,7 @@ public abstract class Hunter
 
     public void Draw(Module<Plugin, Config> module)
     {
-        OcelotUi.Title($"{module.T("panel.hunt.title")}:");
-        OcelotUi.Indent(() =>
+        CrescentTheme.Card($"Hunter_{GetType().Name}", module.T("panel.hunt.title"), () =>
         {
             if (ImGui.Button(running ? I18N.T("generic.label.stop") : I18N.T("generic.label.start")))
             {
@@ -212,7 +212,9 @@ public abstract class Hunter
                     ImGui.SetTooltip(I18N.T("hunter.export.tooltip"));
                 }
 
-                OcelotUi.LabelledValue(I18N.T("hunter.elapsed"), $"{stopwatch.Elapsed:mm\\:ss}");
+                ImGui.TextDisabled(I18N.T("hunter.elapsed"));
+                ImGui.SameLine();
+                ImGui.TextColored(CrescentTheme.AccentSoft, $"{stopwatch.Elapsed:mm\\:ss}");
             }
 
 
@@ -230,7 +232,7 @@ public abstract class Hunter
                     OcelotUi.LabelledValue(I18N.T("hunter.distance_shard"), $"{distance:f2}");
                 }
             }
-        });
+        }, "現在地から近い順に巡回します。");
     }
 
     protected virtual void Teardown()

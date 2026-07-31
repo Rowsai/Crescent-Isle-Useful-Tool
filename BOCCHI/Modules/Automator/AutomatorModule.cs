@@ -90,6 +90,10 @@ public class AutomatorModule : Module
         automator.Refresh();
         Plugin.IPC.GetSubscriber<VNavmesh>().Stop();
         Plugin.Chain.Abort();
+        if (Config.ShouldToggleAiProvider)
+        {
+            Config.AiProvider.Off();
+        }
 
         if (wasEnabled)
         {
