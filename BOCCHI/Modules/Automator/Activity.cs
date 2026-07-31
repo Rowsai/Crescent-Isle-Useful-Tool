@@ -79,52 +79,23 @@ public abstract class Activity
     {
         return () =>
         {
-            var playerShard = AethernetData.AllByDistance().First();
             var activityShard = GetAethernetData();
 
             var isFate = data.Type == EventType.Fate;
-            var navType = SmartNavigation.Decide(Player.Position, GetPosition(), activityShard);
-
-            module.Debug("Selected navigation type: " + navType);
+            module.Debug($"Travelling through nearest destination aetheryte: {activityShard.Aethernet}");
 
             var chain = Chain.Create("Illegal:Pathfinding")
-                .ConditionalWait(_ => !isFate && module.Config.ShouldDelayCriticalEncounters, Random.Shared.Next(10000, 15001));
-
-            switch (navType)
-            {
-                case NavigationType.Walk:
-                    chain
-                        .Then(new PathfindingChain(vnav, GetPosition(), data))
-                        .ConditionalThen(_ => ShouldMountToPathfindTo(GetPosition()), ChainHelper.MountChain());
-                    break;
-
-                case NavigationType.ReturnWalk:
-                    chain
-                        .Then(ChainHelper.ReturnChain())
-                        .Then(new PathfindingChain(vnav, GetPosition(), data))
-                        .ConditionalThen(_ => ShouldMountToPathfindTo(GetPosition()), ChainHelper.MountChain());
-                    break;
-
-                case NavigationType.ReturnTeleportWalk:
-                    chain
-                        .Then(ChainHelper.ReturnChain(new ReturnChainConfig { ApproachAetheryte = true }))
-                        .Then(ChainHelper.TeleportChain(activityShard.Aethernet))
-                        .Debug("Waiting for lifestream to not be 'busy'")
-                        .Then(new TaskManagerTask(() => !lifestream.IsBusy(), new TaskManagerConfiguration { TimeLimitMS = 30000 }))
-                        .Then(new PathfindingChain(vnav, GetPosition(), data))
-                        .ConditionalThen(_ => ShouldMountToPathfindTo(GetPosition()), ChainHelper.MountChain());
-                    break;
-
-                case NavigationType.WalkTeleportWalk:
-                    chain
-                        .Then(ChainHelper.PathfindToAndWait(playerShard.Position, AethernetData.DISTANCE))
-                        .Then(ChainHelper.TeleportChain(activityShard.Aethernet))
-                        .Debug("Waiting for lifestream to not be 'busy'")
-                        .Then(new TaskManagerTask(() => !lifestream.IsBusy(), new TaskManagerConfiguration { TimeLimitMS = 30000 }))
-                        .Then(new PathfindingChain(vnav, GetPosition(), data))
-                        .ConditionalThen(_ => ShouldMountToPathfindTo(GetPosition()), ChainHelper.MountChain());
-                    break;
-            }
+                .ConditionalWait(_ => !isFate && module.Config.ShouldDelayCriticalEncounters, Random.Shared.Next(10000, 15001))
+                .Then(ChainHelper.ReturnChain(new ReturnChainConfig
+                {
+                    ForceReturn = true,
+                    ApproachAetheryte = true,
+                }))
+                .ConditionalThen(_ => activityShard.DistanceToPlayer() > AethernetData.DISTANCE, ChainHelper.TeleportChain(activityShard.Aethernet))
+                .Debug("Waiting for lifestream to not be 'busy'")
+                .Then(new TaskManagerTask(() => !lifestream.IsBusy(), new TaskManagerConfiguration { TimeLimitMS = 30000 }))
+                .Then(new PathfindingChain(vnav, GetPosition(), data))
+                .ConditionalThen(_ => ShouldMountToPathfindTo(GetPosition()), ChainHelper.MountChain());
 
             chain
                 .Then(GetPathfindingWatcher(states))
@@ -172,7 +143,7 @@ public abstract class Activity
 
     private AethernetData GetAethernetData()
     {
-        return data.Aethernet?.GetData() ?? AethernetData.AllByDistance(GetPosition()).First();
+        return AethernetData.AllByDistance(GetPosition()).First();
     }
 
     protected bool IsInZone()

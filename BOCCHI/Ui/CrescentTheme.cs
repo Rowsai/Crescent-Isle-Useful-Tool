@@ -18,6 +18,8 @@ public static class CrescentTheme
 
     public static readonly Vector4 AccentSoft = new(0.38f, 0.79f, 1.00f, 1.00f);
 
+    public static readonly Vector4 Muted = new(0.48f, 0.64f, 0.80f, 1.00f);
+
     public static ThemeScope Push()
     {
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.88f, 0.94f, 1.00f, 1.00f));

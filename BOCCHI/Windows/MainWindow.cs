@@ -104,7 +104,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
         previousTerritory = currentTerritory;
     }
 
-    private static void DrawHeader(uint currentTerritory)
+    private void DrawHeader(uint currentTerritory)
     {
         ImGui.TextColored(CrescentTheme.AccentSoft, "CRESCENT ISLE");
         ImGui.SameLine();
@@ -112,6 +112,10 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
         ImGui.SameLine(ImGui.GetWindowWidth() - 155f);
         var area = currentTerritory == ZoneData.NORTHHORN ? "NORTH HORN" : "SOUTH HORN";
         ImGui.TextColored(CrescentTheme.Accent, $"● {area}");
+        var illegalModeEnabled = Plugin.Modules.GetModule<AutomatorModule>().IsEnabled;
+        ImGui.TextDisabled("不正モード:");
+        ImGui.SameLine();
+        ImGui.TextColored(illegalModeEnabled ? CrescentTheme.AccentSoft : CrescentTheme.Muted, illegalModeEnabled ? "ON" : "OFF");
         ImGui.Separator();
     }
 

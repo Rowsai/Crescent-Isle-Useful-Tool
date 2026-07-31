@@ -1,5 +1,4 @@
 using System.Linq;
-using System.Numerics;
 using BOCCHI.Chains;
 using BOCCHI.Data;
 using BOCCHI.Enums;
@@ -7,7 +6,6 @@ using BOCCHI.Modules.CriticalEncounters;
 using BOCCHI.Modules.Fates;
 using BOCCHI.Modules.StateManager;
 using Dalamud.Plugin.Services;
-using Dalamud.Game.ClientState.Objects.Enums;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using Ocelot.Chain;
@@ -132,17 +130,6 @@ public class Automator
             return;
         }
 
-        if (TryGetBaseCampWaitingPosition(module, out var waitingPosition))
-        {
-            if (Vector3.Distance(Svc.Objects.LocalPlayer!.Position, waitingPosition) > 2f)
-            {
-                Svc.Log.Info($"Base camp is crowded: moving to waiting position {waitingPosition}.");
-                Plugin.Chain.Submit(ChainHelper.PathfindToAndWait(waitingPosition, 2f));
-            }
-
-            return;
-        }
-
         // A CE can already be preparing or in progress by the time the
         // automator evaluates it. Do not cast Return while the player is
         // walking there manually or waiting for registration to reopen.
@@ -152,9 +139,10 @@ public class Automator
             return;
         }
 
-        var closest = AethernetData.GetClosestToPlayer();
-        if (closest.DistanceToPlayer() <= 4.5f)
+        var baseCamp = (ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp).GetData();
+        if (baseCamp.DistanceToPlayer() <= AethernetData.DISTANCE)
         {
+            idleTime = 0;
             return;
         }
 
@@ -163,7 +151,12 @@ public class Automator
         {
             idleTime = 0;
 
-            Plugin.Chain.Submit(ChainHelper.ReturnChain(new ReturnChainConfig { ApproachAetheryte = true }));
+            Svc.Log.Info($"No active CE or FATE: returning to {baseCamp.Aethernet.ToFriendlyString()}.");
+            Plugin.Chain.Submit(ChainHelper.ReturnChain(new ReturnChainConfig
+            {
+                ForceReturn = true,
+                ApproachAetheryte = true,
+            }));
         }
     }
 
@@ -239,49 +232,6 @@ public class Automator
         return module.TryGetModule<CriticalEncountersModule>(out var source)
             && source != null
             && source.CriticalEncounters.Values.Any(encounter => encounter.State != DynamicEventState.Inactive);
-    }
-
-    private static bool TryGetBaseCampWaitingPosition(AutomatorModule module, out Vector3 waitingPosition)
-    {
-        waitingPosition = Vector3.Zero;
-        if (!module.Config.ShouldAvoidPlayersAtBase ||
-            Svc.Objects.LocalPlayer == null ||
-            !ZoneData.Aetherytes.TryGetValue(Svc.ClientState.TerritoryType, out var baseCampPosition))
-        {
-            return false;
-        }
-
-        var player = Svc.Objects.LocalPlayer;
-        if (Vector3.Distance(player.Position, baseCampPosition) > 24f)
-        {
-            return false;
-        }
-
-        var nearbyPlayers = Svc.Objects
-            .Where(obj => obj.ObjectKind == ObjectKind.Pc && obj.GameObjectId != player.GameObjectId)
-            .Where(obj => Vector3.Distance(obj.Position, baseCampPosition) <= 12f)
-            .ToList();
-        if (nearbyPlayers.Count == 0)
-        {
-            return false;
-        }
-
-        var crowdCentre = nearbyPlayers
-            .Select(obj => obj.Position)
-            .Aggregate(Vector3.Zero, (sum, position) => sum + position) / nearbyPlayers.Count;
-        var awayFromCrowd = baseCampPosition - crowdCentre;
-        awayFromCrowd.Y = 0f;
-
-        if (awayFromCrowd.LengthSquared() < 0.01f)
-        {
-            var defaultWait = ZoneData.StartingLocations[Svc.ClientState.TerritoryType];
-            awayFromCrowd = defaultWait - baseCampPosition;
-            awayFromCrowd.Y = 0f;
-        }
-
-        waitingPosition = baseCampPosition + Vector3.Normalize(awayFromCrowd) * module.Config.BaseCampPersonalSpace;
-        waitingPosition.Y = baseCampPosition.Y;
-        return true;
     }
 
     public void Refresh()
