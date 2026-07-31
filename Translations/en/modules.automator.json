@@ -26,6 +26,14 @@
           "label": "Engagement Range",
           "tooltip": "The range to be at from a fate monster before dismounting and letting your rotation/ai plugin take over"
         },
+        "avoid_players_at_base": {
+          "label": "Give other players space at base camp",
+          "tooltip": "While waiting for the next activity, move away from a crowded base-camp aetheryte."
+        },
+        "base_camp_personal_space": {
+          "label": "Base-camp spacing",
+          "tooltip": "How far to move away from other players at the base-camp aetheryte."
+        },
         "do_critical_encounters": {
           "label": "Do Critical Encounters",
           "tooltip": "Should consider critical encounters when choosing an activity"

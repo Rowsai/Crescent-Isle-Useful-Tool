@@ -10,6 +10,7 @@ using BOCCHI.Modules.Exp;
 using BOCCHI.Modules.Fates;
 using BOCCHI.Modules.ForkedTower;
 using BOCCHI.Modules.MobFarmer;
+using BOCCHI.Modules.MagicPot;
 using BOCCHI.Modules.Mount;
 using BOCCHI.Modules.Pathfinder;
 using BOCCHI.Modules.StateManager;
@@ -42,6 +43,8 @@ public class Config : IOcelotConfig
     // Functional
 
     public FatesConfig FatesConfig { get; set; } = new();
+
+    public MagicPotConfig MagicPotConfig { get; set; } = new();
 
     public CriticalEncountersConfig CriticalEncountersConfig { get; set; } = new();
 

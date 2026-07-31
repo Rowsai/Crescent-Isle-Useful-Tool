@@ -149,6 +149,14 @@
         "do_pleading_pots": {
           "label": "FATE: 瑟瑟发抖的魔法罐",
           "tooltip": "选择是否参加FATE “瑟瑟发抖的魔法罐”"
+        },
+        "avoid_players_at_base": {
+          "label": null,
+          "tooltip": null
+        },
+        "base_camp_personal_space": {
+          "label": null,
+          "tooltip": null
         }
       },
       "panel": {

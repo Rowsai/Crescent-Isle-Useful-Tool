@@ -149,6 +149,14 @@
         "toggle_ai_provider": {
           "label": "Activer/Désactiver le plugin d'IA",
           "tooltip": "Active le plugin d'IA au démarrage des Aléa/CC\nDésactive le plugin d'IA lors de la navigation vers les Aléa/CC"
+        },
+        "avoid_players_at_base": {
+          "label": null,
+          "tooltip": null
+        },
+        "base_camp_personal_space": {
+          "label": null,
+          "tooltip": null
         }
       },
       "panel": {

@@ -42,6 +42,17 @@ public class AutomatorConfig : ModuleConfig
 
     [FloatRange(5f, 30f)] public float EngagementRange { get; set; } = 5f;
 
+    [Checkbox] public bool AvoidPlayersAtBase { get; set; } = true;
+
+    public bool ShouldAvoidPlayersAtBase
+    {
+        get => IsPropertyEnabled(nameof(AvoidPlayersAtBase));
+    }
+
+    [FloatRange(5f, 25f)]
+    [DependsOn(nameof(AvoidPlayersAtBase))]
+    public float BaseCampPersonalSpace { get; set; } = 12f;
+
     // Critical Encounters
     [Checkbox] public bool DoCriticalEncounters { get; set; } = true;
 

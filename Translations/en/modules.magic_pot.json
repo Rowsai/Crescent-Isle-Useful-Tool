@@ -1,0 +1,20 @@
+{
+  "modules": {
+    "magic_pot": {
+      "config": {
+        "title": "Magic Pot Settings",
+        "respawn_interval_minutes": {
+          "label": "Respawn interval (minutes)",
+          "tooltip": "North Horn Magic Pot FATEs are expected on this interval after their last observed spawn."
+        }
+      },
+      "panel": {
+        "title": "Magic Pot",
+        "active": "Magic Pot FATE active now",
+        "next_spawn": "Next estimated spawn",
+        "awaiting_observation": "Awaiting the first observed Magic Pot FATE.",
+        "due": "Expected now — waiting for FATE to appear."
+      }
+    }
+  }
+}

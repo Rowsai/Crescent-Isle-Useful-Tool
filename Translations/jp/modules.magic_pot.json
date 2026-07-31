@@ -1,0 +1,20 @@
+{
+  "modules": {
+    "magic_pot": {
+      "config": {
+        "title": "マジックポット設定",
+        "respawn_interval_minutes": {
+          "label": "再発生間隔（分）",
+          "tooltip": "北征編のマジックポットF.A.T.E.を最後に確認した発生時刻から、次回発生を予測する間隔です。"
+        }
+      },
+      "panel": {
+        "title": "マジックポット",
+        "active": "マジックポットF.A.T.E.発生中",
+        "next_spawn": "次回発生予測",
+        "awaiting_observation": "最初のマジックポットF.A.T.E.を検知待ちです。",
+        "due": "発生予測時刻です。F.A.T.E.の出現を待機しています。"
+      }
+    }
+  }
+}

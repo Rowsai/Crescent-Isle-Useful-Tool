@@ -1,0 +1,20 @@
+{
+  "modules": {
+    "magic_pot": {
+      "config": {
+        "respawn_interval_minutes": {
+          "label": null,
+          "tooltip": null
+        },
+        "title": null
+      },
+      "panel": {
+        "active": null,
+        "awaiting_observation": null,
+        "due": null,
+        "next_spawn": null,
+        "title": null
+      }
+    }
+  }
+}

@@ -92,9 +92,10 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
             selectedTerritory = currentTerritory;
         }
 
+        DrawHeader(currentTerritory);
+
         if (ImGui.BeginTabBar("##OccultCrescentArea"))
         {
-            DrawHeader(currentTerritory);
             DrawAreaTab("南征編 (South Horn)", ZoneData.SOUTHHORN, ZoneData.IsInSouthHorn(), selectCurrentArea && currentTerritory == ZoneData.SOUTHHORN, context);
             DrawAreaTab("北征編 (North Horn)", ZoneData.NORTHHORN, ZoneData.IsInNorthHorn(), selectCurrentArea && currentTerritory == ZoneData.NORTHHORN, context);
             ImGui.EndTabBar();
