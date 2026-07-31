@@ -105,8 +105,8 @@ public class ChainHelper
             );
     }
 
-    public static TreasureSightChain TreasureSightChain()
+    public static TreasureSightChain TreasureSightChain(bool force = false)
     {
-        return new TreasureSightChain(Modules.GetModule<TreasureModule>());
+        return new TreasureSightChain(Modules.GetModule<TreasureModule>(), force);
     }
 }

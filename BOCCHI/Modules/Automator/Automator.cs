@@ -24,6 +24,12 @@ public class Automator
 
     private int idleTime = 0;
 
+    // A completion return is a single operation: cast Demi-Déjion at the
+    // activity, arrive at base camp, then approach the aetheryte.  Keeping
+    // this state prevents the idle fallback from casting it a second time
+    // beside the aetheryte.
+    private bool returningAfterActivity = false;
+
     public void PostUpdate(AutomatorModule module, IFramework framework)
     {
         var vnav = module.GetIPCSubscriber<VNavmesh>();
@@ -71,14 +77,20 @@ public class Automator
 
         if (Activity != null && Activity.state == ActivityState.Done)
         {
-            var completedCriticalEncounter = Activity.data.Type == EventType.CriticalEncounter;
+            var completedActivity = Activity;
             Activity = null;
             idleTime = 0;
 
-            if (completedCriticalEncounter)
+            if (!returningAfterActivity && !IsNearBaseCamp())
             {
-                Svc.Log.Info("Critical Encounter complete: casting Demi Dejon.");
-                Plugin.Chain.Submit(ChainHelper.ReturnChain(new ReturnChainConfig { ForceReturn = true }));
+                returningAfterActivity = true;
+                Svc.Log.Info($"{completedActivity.GetName()} complete: casting Demi Dejon once and returning to base camp.");
+                Plugin.Chain.Submit(ChainHelper.ReturnChain(new ReturnChainConfig
+                {
+                    ForceReturn = true,
+                    ApproachAetheryte = true,
+                    UpdateTreasureCount = true,
+                }));
             }
 
             return;
@@ -102,6 +114,7 @@ public class Automator
             if (Activity != null)
             {
                 idleTime = 0;
+                returningAfterActivity = false;
                 Plugin.Chain.Abort();
                 vnav.Stop();
                 Svc.Log.Info($"Selected priority activity: {Activity.GetName()}");
@@ -128,6 +141,25 @@ public class Automator
         if (!module.Config.ShouldDoFates && !module.Config.ShouldDoCriticalEncounters)
         {
             return;
+        }
+
+        if (returningAfterActivity)
+        {
+            if (IsChainActive)
+            {
+                return;
+            }
+
+            if (IsNearBaseCamp())
+            {
+                returningAfterActivity = false;
+                return;
+            }
+
+            // The return operation did not arrive at base camp (for example,
+            // it was cancelled externally).  Let the normal idle recovery
+            // retry after its delay instead of issuing duplicate casts.
+            returningAfterActivity = false;
         }
 
         // A CE can already be preparing or in progress by the time the
@@ -234,9 +266,16 @@ public class Automator
             && source.CriticalEncounters.Values.Any(encounter => encounter.State != DynamicEventState.Inactive);
     }
 
+    private static bool IsNearBaseCamp()
+    {
+        var baseCamp = (ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp).GetData();
+        return baseCamp.DistanceToPlayer() <= AethernetData.DISTANCE;
+    }
+
     public void Refresh()
     {
         Activity = null;
         idleTime = 0;
+        returningAfterActivity = false;
     }
 }

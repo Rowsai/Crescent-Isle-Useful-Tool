@@ -44,9 +44,11 @@ public class Panel
     {
         if (!module.Tracker.CountInitialised)
         {
+            ImGui.TextDisabled("取得可能な宝箱数: 計測待ち");
             return;
         }
 
+        ImGui.TextColored(TreasureModule.Bronze, "取得可能な宝箱数");
         OcelotUi.LabelledValue(module.T("panel.active_bronze.label"), $"{module.Tracker.BronzeChests}/30");
         if (module.Config.ShowPercentageActiveTreasureCount)
         {

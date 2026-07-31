@@ -33,7 +33,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
             chain.WaitToCast().WaitToCycleCondition(ConditionFlag.BetweenAreas);
         }
 
-        chain.Then(ChainHelper.TreasureSightChain());
+        chain.Then(ChainHelper.TreasureSightChain(config.UpdateTreasureCount));
         chain.Then(ApplyBuffs);
 
         if (config.ApproachAetheryte)
