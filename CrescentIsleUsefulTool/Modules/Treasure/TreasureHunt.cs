@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
-using CrescentIsleUsefulTool.ActionHelpers;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Pathfinding;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -134,8 +133,6 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
             var interactionSent = false;
             return Chain.Create()
                 .BreakIf(() => !IsCurrentCofferNear(entityId, position))
-                .ConditionalThen(_ => Player.Mounted, _ => Actions.Unmount.Cast())
-                .Wait(500)
                 .Then(new TaskManagerTask(() =>
                 {
                     var current = GameObjectInteraction.Resolve(entityId);
