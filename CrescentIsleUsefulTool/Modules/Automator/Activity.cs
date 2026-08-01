@@ -73,7 +73,7 @@ public abstract class Activity
                 return module.Config.ShouldToggleAiProvider && !Svc.Condition[ConditionFlag.InCombat];
             }
 
-            return Chain.Create("Illegal:Idle")
+            return Chain.Create("Automation:Idle")
                 .ConditionalThen(ShouldToggleAi, _ => module.Config.AiProvider.Off())
                 .Then(_ => { VnavmeshIpc.TryStop(vnav); })
                 .Then(_ => state = ActivityState.Pathfinding);
@@ -90,7 +90,7 @@ public abstract class Activity
             var isFate = data.Type == EventType.Fate;
             module.Debug($"Travelling through nearest destination aetheryte: {activityShard.Aethernet}");
 
-            var chain = Chain.Create("Illegal:Pathfinding")
+            var chain = Chain.Create("Automation:Pathfinding")
                 .ConditionalWait(_ => !isFate && module.Config.ShouldDelayCriticalEncounters, Random.Shared.Next(10000, 15001))
                 .ConditionalThen(_ => !ZoneData.IsNearBaseCamp(), ChainHelper.ReturnChain(new ReturnChainConfig
                 {
@@ -119,7 +119,7 @@ public abstract class Activity
     {
         return () =>
         {
-            return Chain.Create("Illegal:Participating")
+            return Chain.Create("Automation:Participating")
                 .ConditionalThen(_ => module.Config.ShouldToggleAiProvider, _ => module.Config.AiProvider.On())
                 .Then(_ => { VnavmeshIpc.TryStop(vnav); })
                 .Then(new TaskManagerTask(() =>

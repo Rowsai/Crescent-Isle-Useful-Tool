@@ -45,12 +45,12 @@ public class AutomatorWindow(Plugin _plugin, Config _config) : OcelotWindow(_plu
                     return;
                 }
 
-                AutomatorModule.ToggleIllegalMode(Plugin);
+                AutomatorModule.ToggleAutomationMode(Plugin);
             },
-            Icon = FontAwesomeIcon.Skull,
+            Icon = FontAwesomeIcon.Robot,
             IconColor = CrescentTheme.AccentSoft,
             IconOffset = new Vector2(2, 2),
-            ShowTooltip = () => ImGui.SetTooltip("Toggle Illegal Mode"),
+            ShowTooltip = () => ImGui.SetTooltip("自動操作モードを切り替え"),
         });
     }
 
@@ -67,7 +67,7 @@ public class AutomatorWindow(Plugin _plugin, Config _config) : OcelotWindow(_plu
         var automator = Plugin.Modules.GetModule<AutomatorModule>();
         if (!automator.IsEnabled)
         {
-            ImGui.TextUnformatted("Illegal Mode is not enabled.");
+            ImGui.TextUnformatted("自動操作モードはOFFです。");
             return;
         }
 

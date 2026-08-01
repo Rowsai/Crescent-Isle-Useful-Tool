@@ -23,7 +23,7 @@ public class MainCommand(Plugin plugin) : OcelotCommand
 メイン画面を開きます。
  - /ciut : メイン画面を開く
  - /ciut config : 設定画面を開く
- - /ciut illegal [on|off|toggle] : 不正モードを操作する
+ - /ciut auto [on|off|toggle] : 自動操作モードを操作する
  - /ciut buff : バフ更新を実行する
  - /ciut tp [pot|ce|fate] : 対象に最も近いエーテライトへ移動する
  - /ciut language <en|de|fr|jp|uwu> : 表示言語を変更する
@@ -69,9 +69,9 @@ public class MainCommand(Plugin plugin) : OcelotCommand
             return;
         }
 
-        if (arguments == "illegal" || arguments.StartsWith("illegal "))
+        if (arguments == "auto" || arguments.StartsWith("auto "))
         {
-            new IllegalModeCommand(plugin).Execute("/ciutillegal", arguments.ReplaceFirst("illegal", "").Trim());
+            new AutomationModeCommand(plugin).Execute("/ciutauto", arguments.ReplaceFirst("auto", "").Trim());
             return;
         }
 

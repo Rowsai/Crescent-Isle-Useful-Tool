@@ -20,7 +20,7 @@ public class CarrotsConfig : ModuleConfig
 
     [Checkbox]
     [Experimental]
-    [Illegal]
+    [Automation]
     [RequiredPlugin("vnavmesh", "Lifestream")]
     [DependsOn(nameof(Enabled))]
     [Label("modules.carrots.config.show_hunt_button.label")]

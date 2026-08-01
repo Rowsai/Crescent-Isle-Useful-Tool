@@ -4,7 +4,7 @@
       "buttons": {
         "emergency_stop": null,
         "toggle_config": null,
-        "toggle_illegal_mode": null
+        "toggle_automation_mode": "Activer/désactiver le mode automatique"
       },
       "title": "Crescent Isle Useful Tool"
     }

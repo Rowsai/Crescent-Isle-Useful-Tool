@@ -1,9 +1,7 @@
-using System.Collections.Generic;
 using System.Linq;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Modules.Buff.Chains;
 using ECommons.GameHelpers;
-using ECommons.Throttlers;
 using Ocelot.Chain;
 
 namespace CrescentIsleUsefulTool.Modules.Buff;
@@ -22,19 +20,12 @@ public class BuffManager
         return applyBuffsOnNextTick;
     }
 
-    private int lowestTimer = int.MaxValue;
-
     public void Update(BuffModule module)
     {
         if (applyBuffsOnNextTick)
         {
             applyBuffsOnNextTick = false;
             ApplyBuffs(module);
-        }
-
-        if (EzThrottler.Throttle("BuffManager.Tick.GetLowestBuffTimer", 1000))
-        {
-            lowestTimer = GetLowestBuffTimer(module);
         }
     }
 
@@ -49,26 +40,31 @@ public class BuffManager
         manager.Submit(new AllBuffsChain(module));
     }
 
-    private int GetLowestBuffTimer(BuffModule module)
+    public int GetLowestBuffTimer(BuffModule module)
     {
-        List<uint> buffs = [];
-
-        if (module.Config.UseInquiringMind)
+        if (!module.Config.UseInquiringMind)
         {
-            buffs.Add((uint)PlayerStatus.QuickerStep);
+            return int.MaxValue;
         }
 
-        var statuses = Player.Status.Where(s => buffs.Contains(s.StatusId)).ToList();
-        return statuses.Count == 0 ? 0 : statuses.Select(status => (int)status.RemainingTime).Min();
+        var timers = FreelancerBuffChain.AppliedStatuses
+            .Select(buff => Player.Status.Get(buff))
+            .ToList();
+
+        // Inquiring Mind applies all four 30-minute knowledge buffs. A single
+        // missing buff must trigger a refresh even when the others are fresh.
+        return timers.Any(status => status == null)
+            ? 0
+            : timers.Min(status => (int)status!.RemainingTime);
     }
 
     public bool ShouldRefresh(BuffModule module)
     {
-        if (!module.IsEnabled)
+        if (!module.IsEnabled || !module.Config.UseInquiringMind)
         {
             return false;
         }
 
-        return lowestTimer <= module.Config.ReapplyThreshold * 60;
+        return GetLowestBuffTimer(module) <= module.Config.ReapplyThreshold * 60;
     }
 }

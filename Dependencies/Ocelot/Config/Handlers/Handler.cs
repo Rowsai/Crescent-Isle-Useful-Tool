@@ -45,9 +45,9 @@ public abstract class Handler(ModuleConfig self, ConfigAttribute attribute, Prop
         {
             context.CustomIcons();
 
-            if (context.IsIllegal())
+            if (context.IsAutomation())
             {
-                context.Illegal();
+                context.Automation();
             }
 
             if (context.IsExperimental())

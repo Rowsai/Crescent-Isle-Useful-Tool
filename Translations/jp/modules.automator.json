@@ -2,9 +2,9 @@
   "modules": {
     "automator": {
       "config": {
-        "title": "不正モード",
+        "title": "自動操作モード",
         "enabled": {
-          "tooltip": "不正モードはbotであり、このセクション以外では設定によって動作が決定されません。"
+          "tooltip": "FATE・CEへの移動と戦闘支援を自動化します。動作はこのセクションの設定に従います。"
         },
         "ai_provider": {
           "label": "AIプロバイダー",
@@ -160,7 +160,7 @@
         }
       },
       "panel": {
-        "title": "不正モード",
+        "title": "自動操作モード",
         "activity": {
           "label": "アクティビティ",
           "none": "なし"
@@ -170,12 +170,12 @@
           "none": "アクティビティを待機中"
         },
         "lens": {
-          "title": "Crescent Isle Useful Tool 不正モード"
+          "title": "Crescent Isle Useful Tool 自動操作モード"
         }
       },
       "messages": {
-        "off": "[Crescent Isle Useful Tool] 不正モード OFF",
-        "on": "[Crescent Isle Useful Tool] 不正モード ON"
+        "off": "[Crescent Isle Useful Tool] 自動操作モード OFF",
+        "on": "[Crescent Isle Useful Tool] 自動操作モード ON"
       }
     }
   }

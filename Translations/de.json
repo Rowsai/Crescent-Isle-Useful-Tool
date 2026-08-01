@@ -14,7 +14,7 @@
       "stop": "Stoppen"
     },
     "tooltip": {
-      "illegal_mode_compatible": "Diese Option ist mit dem Illegalen Modus kompatibel. Sie wird verwendet, während er läuft."
+      "automation_mode_compatible": "Diese Option wird im Automatisierungsmodus verwendet."
     }
   },
   "modules": {
@@ -208,9 +208,9 @@
       }
     },
     "automator": {
-      "title": "Illegaler Modus",
+      "title": "Automatisierungsmodus",
       "enabled": {
-        "tooltip": "Der Illegale Modus ist ein Bot, seine Aktionen werden außerhalb dieses Abschnitts nicht von deiner Konfiguration bestimmt."
+        "tooltip": "Automatisiert die Reise zu FATEs und CEs sowie die Kampfunterstützung gemäß diesem Abschnitt."
       },
       "ai_provider": {
         "label": "KI-Anbieter",
@@ -357,7 +357,7 @@
         "tooltip": "Schaltet die Teilnahme am FATE 'Flehende Töpfe' um."
       },
       "panel": {
-        "title": "Illegaler Modus",
+        "title": "Automatisierungsmodus",
         "activity": {
           "label": "Aktivität",
           "none": "Keine"

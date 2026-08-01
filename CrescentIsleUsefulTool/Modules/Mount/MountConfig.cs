@@ -8,8 +8,8 @@ public class MountConfig : ModuleConfig
 {
     [ExcelSheet(typeof(ExcelMount), nameof(MountProvider))]
     [Searchable]
-    [IllegalModeCompatible]
+    [AutomationModeCompatible]
     public uint Mount { get; set; } = 1;
 
-    [Checkbox] [IllegalModeCompatible] public bool MountRoulette { get; set; } = false;
+    [Checkbox] [AutomationModeCompatible] public bool MountRoulette { get; set; } = false;
 }

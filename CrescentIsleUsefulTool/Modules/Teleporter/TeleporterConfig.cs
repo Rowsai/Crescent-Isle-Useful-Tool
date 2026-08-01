@@ -7,12 +7,12 @@ public class TeleporterConfig : ModuleConfig
 {
     [Checkbox]
     [RequiredPlugin("Lifestream")]
-    [IllegalModeCompatible]
+    [AutomationModeCompatible]
 
     public bool ShouldMount { get; set; } = true;
 
     [Checkbox]
-    [Illegal]
+    [Automation]
     [RequiredPlugin("vnavmesh")]
 
     public bool PathToDestination { get; set; } = false;

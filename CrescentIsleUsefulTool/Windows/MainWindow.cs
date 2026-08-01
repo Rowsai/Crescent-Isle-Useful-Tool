@@ -49,7 +49,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
                     return;
                 }
 
-                Plugin.Modules.GetModule<AutomatorModule>().DisableIllegalMode();
+                Plugin.Modules.GetModule<AutomatorModule>().DisableAutomationMode();
             },
             Icon = FontAwesomeIcon.Stop,
             IconColor = CrescentTheme.AccentSoft,
@@ -66,12 +66,12 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
                     return;
                 }
 
-                AutomatorModule.ToggleIllegalMode(Plugin);
+                AutomatorModule.ToggleAutomationMode(Plugin);
             },
-            Icon = FontAwesomeIcon.Skull,
+            Icon = FontAwesomeIcon.Robot,
             IconColor = CrescentTheme.AccentSoft,
             IconOffset = new Vector2(2, 2),
-            ShowTooltip = () => ImGui.SetTooltip(I18N.T("windows.main.buttons.toggle_illegal_mode")),
+            ShowTooltip = () => ImGui.SetTooltip(I18N.T("windows.main.buttons.toggle_automation_mode")),
         });
     }
 
@@ -124,7 +124,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
         ImGui.TextColored(CrescentTheme.Accent, $"● {area}");
         var automator = Plugin.Modules.GetModule<AutomatorModule>();
         CrescentTheme.Status(
-            "不正モード",
+            "自動操作モード",
             automator.IsEnabled ? "ON" : "OFF",
             automator.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted
         );

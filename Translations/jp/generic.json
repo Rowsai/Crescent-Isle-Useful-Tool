@@ -7,7 +7,7 @@
       "not_in_zone": "現在クレセントアイルのゾーン外です"
     },
     "tooltip": {
-      "illegal_mode_compatible": "このオプションは不正モードと互換性があり、実行中に使用されます。"
+      "automation_mode_compatible": "このオプションは自動操作モードで使用されます。"
     }
   }
 }

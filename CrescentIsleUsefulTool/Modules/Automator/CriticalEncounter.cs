@@ -108,7 +108,7 @@ public class CriticalEncounter : Activity
     {
         return () =>
         {
-            return Chain.Create("Illegal:WaitingToStartCriticalEncounter")
+            return Chain.Create("Automation:WaitingToStartCriticalEncounter")
                 .Then(new TaskManagerTask(() =>
                     {
                         if (!IsValid())

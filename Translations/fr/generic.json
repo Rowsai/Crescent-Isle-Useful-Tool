@@ -7,7 +7,7 @@
       "stop": "Arrêter"
     },
     "tooltip": {
-      "illegal_mode_compatible": "Option compatible avec le mode illégal, elle sera utilisée pendant son exécution."
+      "automation_mode_compatible": "Cette option est utilisée pendant le fonctionnement du mode automatique."
     }
   }
 }

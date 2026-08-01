@@ -6,28 +6,28 @@ using Ocelot.Modules;
 namespace CrescentIsleUsefulTool.Commands;
 
 [OcelotCommand]
-public class IllegalModeCommand(Plugin plugin) : OcelotCommand
+public class AutomationModeCommand(Plugin plugin) : OcelotCommand
 {
     protected override string Command
     {
-        get => "/ciutillegal";
+        get => "/ciutauto";
     }
 
     protected override string Description
     {
         get => @"
-不正モードの画面と稼働状態を操作します。
- - /ciutillegal : 不正モード画面を開閉
- - /ciutillegal on : 不正モードを有効化
- - /ciutillegal off : 不正モードを無効化
- - /ciutillegal toggle : 不正モードのON/OFFを切り替え
+自動操作モードの画面と稼働状態を操作します。
+ - /ciutauto : 自動操作モード画面を開閉
+ - /ciutauto on : 自動操作モードを有効化
+ - /ciutauto off : 自動操作モードを無効化
+ - /ciutauto toggle : 自動操作モードのON/OFFを切り替え
 --------------------------------
 ".Trim();
     }
 
     protected override IReadOnlyList<string> Aliases
     {
-        get => ["/crescentillegal"];
+        get => ["/crescentauto"];
     }
 
     protected override IReadOnlyList<string> ValidArguments
@@ -51,13 +51,13 @@ public class IllegalModeCommand(Plugin plugin) : OcelotCommand
         switch (arguments)
         {
             case "on":
-                automator.EnableIllegalMode();
+                automator.EnableAutomationMode();
                 break;
             case "off":
-                automator.DisableIllegalMode();
+                automator.DisableAutomationMode();
                 break;
             case "toggle":
-                AutomatorModule.ToggleIllegalMode(plugin);
+                AutomatorModule.ToggleAutomationMode(plugin);
                 break;
         }
 

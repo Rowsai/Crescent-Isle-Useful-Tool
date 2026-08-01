@@ -26,14 +26,27 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
     {
         chain.BreakIf(() => Player.IsDead);
 
-        var shouldReturn = !ZoneData.IsNearBaseCamp() &&
-                           (config.ForceReturn || GetCostToReturn() < GetCostToWalk());
+        var vnav = module.GetIPCSubscriber<VNavmesh>();
+        var shouldReturn = false;
+        var movementBlocksReturn = false;
 
-        if (shouldReturn)
+        // Evaluate at execution time. A chain may have been queued while the
+        // character was still travelling and reach this step beside camp.
+        chain.Then(_ =>
         {
-            chain = Actions.Return.CastOnChain(chain);
-            chain.WaitToCast().WaitToCycleCondition(ConditionFlag.BetweenAreas);
-        }
+            shouldReturn = ShouldUseDemiReturn();
+            movementBlocksReturn = shouldReturn && VnavmeshIpc.IsMovementActive(vnav);
+            if (movementBlocksReturn)
+            {
+                Svc.Log.Info(config.WaitForStationaryDemiReturn
+                    ? "Waiting for movement to stop before the required Demi-Déjion."
+                    : "Skipping Demi-Déjion because movement or pathfinding is active.");
+            }
+        });
+        chain.ConditionalThen(
+            _ => shouldReturn && (!movementBlocksReturn || config.WaitForStationaryDemiReturn),
+            () => CreateDemiReturnChain(vnav)
+        );
 
         chain.Then(ChainHelper.TreasureSightChain(config.UpdateTreasureCount));
         if (config.ApplyBuffs)
@@ -43,7 +56,6 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
         if (config.ApproachAetheryte)
         {
-            var vnav = module.GetIPCSubscriber<VNavmesh>();
             var lifestream = module.GetIPCSubscriber<Lifestream>();
             var position = GetAetherytePosition();
 
@@ -54,6 +66,30 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
 
         return chain.Then(_ => complete = true);
+    }
+
+    private Chain CreateDemiReturnChain(VNavmesh vnav)
+    {
+        var chain = Chain.Create("DemiReturn");
+        if (config.WaitForStationaryDemiReturn)
+        {
+            chain.Then(_ => !VnavmeshIpc.IsMovementActive(vnav));
+            chain.BreakIf(() => !ShouldUseDemiReturn());
+        }
+        else
+        {
+            chain.RunIf(() => ShouldUseDemiReturn() && !VnavmeshIpc.IsMovementActive(vnav));
+        }
+
+        chain = Actions.Return.CastOnChain(chain);
+        chain.WaitToCast().WaitToCycleCondition(ConditionFlag.BetweenAreas);
+        return chain;
+    }
+
+    private bool ShouldUseDemiReturn()
+    {
+        return !ZoneData.IsNearBaseCamp() &&
+               (config.ForceReturn || GetCostToReturn() < GetCostToWalk());
     }
 
     private Chain ApplyBuffs()
