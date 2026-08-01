@@ -82,6 +82,7 @@ public abstract class Hunter
             { PathfinderStepType.ReturnToBaseCamp, ReturnToBaseCampHandler },
             { PathfinderStepType.WalkToAethernet, WalkToAethernetHandler },
             { PathfinderStepType.TeleportToAethernet, TeleportToAethernetHandler },
+            { PathfinderStepType.RideTurbulence, RideTurbulenceHandler },
         };
     }
 
@@ -92,6 +93,11 @@ public abstract class Hunter
     protected float GetDetectionRange()
     {
         return config.DetectionRange;
+    }
+
+    protected virtual float GetInactiveNodeConfirmationRange()
+    {
+        return GetDetectionRange();
     }
 
     protected abstract IPathfinder CreatePathfinder();
@@ -122,6 +128,15 @@ public abstract class Hunter
     /// the base-camp safety radius. This remains disabled for ordinary hunts.
     /// </summary>
     protected virtual bool AlwaysUseDemiReturnAtRouteStart => false;
+
+    /// <summary>
+    /// Forces Magi Treasuresight during the route-start return sequence.
+    /// </summary>
+    protected virtual bool UpdateTreasureCountAtRouteStart => false;
+
+    protected virtual void OnHuntStarted(bool isResuming)
+    {
+    }
 
     protected virtual bool ShouldSkipStep(PathfinderStep step)
     {
@@ -294,6 +309,7 @@ public abstract class Hunter
                     }
 
                     running = true;
+                    OnHuntStarted(isResuming);
                     if (isResuming)
                     {
                         stopwatch.Start();
@@ -459,7 +475,7 @@ public abstract class Hunter
             return false;
         }
 
-        if (layoutDistance <= GetDetectionRange())
+        if (layoutDistance <= GetInactiveNodeConfirmationRange())
         {
             // This placement is not active for the current player, or it has
             // already been opened. Continue to the next internal coordinate.
@@ -501,6 +517,7 @@ public abstract class Hunter
             AlwaysUseDemiReturn = AlwaysUseDemiReturnAtRouteStart,
             WaitForStationaryDemiReturn = AlwaysUseDemiReturnAtRouteStart,
             ApplyBuffs = true,
+            UpdateTreasureCount = UpdateTreasureCountAtRouteStart,
         }));
 
         return true;
@@ -530,6 +547,40 @@ public abstract class Hunter
         distance = 0;
         StepProcessor.SubmitFront(ChainHelper.TeleportChain(CurrentStep.Aethernet));
         return true;
+    }
+
+    private bool RideTurbulenceHandler()
+    {
+        var trigger = CurrentStep.Position;
+        var arrival = CurrentStep.ArrivalPosition;
+        distance = Player.DistanceTo(trigger);
+
+        if (HasReachedTurbulenceArrival(arrival))
+        {
+            VnavmeshIpc.TryStop(vnav);
+            return true;
+        }
+
+        VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+        if (!isRunning)
+        {
+            VnavmeshIpc.TryPathfindAndMoveTo(vnav, trigger, false);
+        }
+
+        if (!Player.Mounted && distance > DISTANCE_TO_NODE_TO_USE)
+        {
+            StepProcessor.SubmitFront(ChainHelper.MountChain());
+        }
+
+        return false;
+    }
+
+    private static bool HasReachedTurbulenceArrival(Vector3 arrival)
+    {
+        var horizontalDistance = Vector2.Distance(
+            new Vector2(Player.Position.X, Player.Position.Z),
+            new Vector2(arrival.X, arrival.Z));
+        return MathF.Abs(Player.Position.Y - arrival.Y) <= 15f && horizontalDistance <= 35f;
     }
 
     private static bool HasQueueWork(ChainQueue queue)

@@ -1,4 +1,5 @@
 using CrescentIsleUsefulTool.Enums;
+using System.Numerics;
 
 namespace CrescentIsleUsefulTool.Pathfinding;
 
@@ -9,6 +10,10 @@ public class PathfinderStep
     public uint NodeId = 0;
 
     public Aethernet Aethernet = Aethernet.BaseCamp;
+
+    public Vector3 Position;
+
+    public Vector3 ArrivalPosition;
 
     public static PathfinderStep WalkToDestination(uint id)
     {
@@ -42,6 +47,16 @@ public class PathfinderStep
         return new PathfinderStep
         {
             Type = PathfinderStepType.ReturnToBaseCamp,
+        };
+    }
+
+    public static PathfinderStep RideTurbulence(Vector3 position, Vector3 arrivalPosition)
+    {
+        return new PathfinderStep
+        {
+            Type = PathfinderStepType.RideTurbulence,
+            Position = position,
+            ArrivalPosition = arrivalPosition,
         };
     }
 }

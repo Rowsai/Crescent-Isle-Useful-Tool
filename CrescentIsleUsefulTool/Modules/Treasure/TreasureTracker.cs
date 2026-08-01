@@ -29,6 +29,8 @@ public class TreasureTracker : IDisposable
 
     public bool CountInitialised { get; private set; } = false;
 
+    public int CountRevision { get; private set; }
+
     public int BronzeChests { get; private set; } = 0;
 
     public int SilverChests { get; private set; } = 0;
@@ -47,6 +49,8 @@ public class TreasureTracker : IDisposable
 
     private DateTime LastParseWideText = DateTime.MinValue;
 
+    private DateTime MeasurementRequestedAtUtc = DateTime.MinValue;
+
     public TreasureTracker()
     {
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PostDraw, "_WideText", OnWideTextPostDraw);
@@ -62,11 +66,11 @@ public class TreasureTracker : IDisposable
             .ToList();
     }
 
-    public void RecordAcquired(ulong entityId, TreasureType treasureType)
+    public bool RecordAcquired(ulong entityId, TreasureType treasureType)
     {
         if (!recordedOpenedTreasures.Add(entityId))
         {
-            return;
+            return false;
         }
 
         if (treasureType == TreasureType.Bronze)
@@ -79,6 +83,15 @@ public class TreasureTracker : IDisposable
             observedAcquiredSilverChests++;
             SilverChests = Math.Max(0, SilverChests - 1);
         }
+
+        return true;
+    }
+
+    public void BeginCountMeasurement()
+    {
+        CountInitialised = false;
+        LastParseWideText = DateTime.MinValue;
+        MeasurementRequestedAtUtc = DateTime.UtcNow;
     }
 
     public void ResetSession()
@@ -90,7 +103,9 @@ public class TreasureTracker : IDisposable
         BronzeChests = 0;
         SilverChests = 0;
         CountInitialised = false;
+        CountRevision = 0;
         LastParseWideText = DateTime.MinValue;
+        MeasurementRequestedAtUtc = DateTime.MinValue;
     }
 
     private unsafe void OnWideTextPostDraw(AddonEvent type, AddonArgs args)
@@ -111,13 +126,16 @@ public class TreasureTracker : IDisposable
             return;
         }
 
+        if (DateTime.UtcNow - MeasurementRequestedAtUtc < TimeSpan.FromMilliseconds(250))
+        {
+            return;
+        }
+
         var timeSinceLast = DateTime.Now - LastParseWideText;
         if (timeSinceLast < ParseWideTextCooldown)
         {
             return;
         }
-
-        LastParseWideText = DateTime.Now;
 
         var node = addon->GetNodeById(3);
         if (node == null)
@@ -149,6 +167,8 @@ public class TreasureTracker : IDisposable
         SilverChests = silver;
         BronzeChests = bronze;
         CountInitialised = true;
+        CountRevision++;
+        LastParseWideText = DateTime.Now;
     }
 
     public void Dispose()

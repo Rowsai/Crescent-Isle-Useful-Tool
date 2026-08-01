@@ -26,8 +26,21 @@ public class PathfinderStepConverter : JsonConverter<PathfinderStep>
             case PathfinderStepType.WalkToAethernet:
                 writer.WriteString("Aethernet", value.Aethernet.ToString());
                 break;
+            case PathfinderStepType.RideTurbulence:
+                WriteVector(writer, "Position", value.Position);
+                WriteVector(writer, "ArrivalPosition", value.ArrivalPosition);
+                break;
         }
 
+        writer.WriteEndObject();
+    }
+
+    private static void WriteVector(Utf8JsonWriter writer, string name, System.Numerics.Vector3 value)
+    {
+        writer.WriteStartObject(name);
+        writer.WriteNumber("X", value.X);
+        writer.WriteNumber("Y", value.Y);
+        writer.WriteNumber("Z", value.Z);
         writer.WriteEndObject();
     }
 }

@@ -263,6 +263,7 @@ public abstract class BasePathfinder(float returnCost = 300f, float teleportCost
                 PathfinderStepType.WalkToAethernet => $"[{index}] Walk to Aethernet: {step.Aethernet}",
                 PathfinderStepType.TeleportToAethernet => $"[{index}] Teleport to Aethernet: {step.Aethernet}",
                 PathfinderStepType.ReturnToBaseCamp => $"[{index}] Return to Base Camp",
+                PathfinderStepType.RideTurbulence => $"[{index}] Ride turbulence: {step.Position} -> {step.ArrivalPosition}",
                 _ => $"[{index}] Unknown Step Type",
             };
 

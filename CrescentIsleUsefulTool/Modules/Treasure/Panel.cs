@@ -39,6 +39,9 @@ public class Panel
                             $"地下空洞 {module.Hunter.ExcludedUndergroundLocationCount}件を除外"
                         );
                     }
+
+                    ImGui.Spacing();
+                    DrawSurfaceCountValidation(module);
                 }
             }
 
@@ -63,6 +66,33 @@ public class Panel
                 ImGui.TextDisabled($"X:{pos.X:F1} Y:{pos.Z:F1}  /  {Vector3.Distance(Player.Position, pos):F1}m");
             }
         }, "取得可能数と現在地付近の宝箱を表示します。", TreasureModule.Bronze);
+    }
+
+    private static void DrawSurfaceCountValidation(TreasureModule module)
+    {
+        ImGui.TextDisabled("マギ・トレジャーサーチ照合");
+        if (!module.Hunter.RouteStartRemainingChestCount.HasValue)
+        {
+            ImGui.TextColored(CrescentTheme.Muted, "開始時に残り宝箱数を取得します。");
+            return;
+        }
+
+        ImGui.TextUnformatted($"開始時 {module.Hunter.RouteStartRemainingChestCount.Value}個 / 地上で取得 {module.Hunter.SurfaceOpenedThisRun}個");
+        if (!module.Hunter.SurfaceCountValidationCompleted)
+        {
+            ImGui.TextColored(CrescentTheme.AccentSoft, $"地上ルート巡回中（現在の残数 {module.Tracker.RemainingChests}個）");
+            return;
+        }
+
+        if (module.Tracker.RemainingChests == 0)
+        {
+            ImGui.TextColored(CrescentTheme.Success, "地下空洞を除く地上巡回で、残数0を確認しました。");
+            return;
+        }
+
+        ImGui.TextColored(
+            CrescentTheme.Warning,
+            $"地上全座標の巡回後も {module.Tracker.RemainingChests}個残っています（地下空洞または未取得）。");
     }
 
     private void DrawActiveChests(TreasureModule module)

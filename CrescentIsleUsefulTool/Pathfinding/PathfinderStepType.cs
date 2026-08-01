@@ -6,4 +6,5 @@ public enum PathfinderStepType
     ReturnToBaseCamp,
     WalkToAethernet,
     TeleportToAethernet,
+    RideTurbulence,
 }

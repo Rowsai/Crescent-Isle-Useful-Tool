@@ -14,8 +14,9 @@ public class TreasureSightChain(TreasureModule module, bool force) : ChainFactor
     {
         chain.RunIf(() => force || module.Config.CastTreasureSightUponReturn);
 
+        chain.Then(_ => module.Tracker.BeginCountMeasurement());
         chain.Then(Job.Freelancer.ChangeToChain);
-        chain.Then(Actions.Freelancer.Treasuresight.GetCastChain()).Wait(1000);
+        chain.Then(Actions.Freelancer.Treasuresight.GetCastChain()).Wait(1500);
         chain.Then(StartingJob.ChangeToChain);
 
         return chain;

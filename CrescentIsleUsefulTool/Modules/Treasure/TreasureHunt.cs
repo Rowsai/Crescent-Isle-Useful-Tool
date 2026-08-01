@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using CrescentIsleUsefulTool.Data;
+using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Pathfinding;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.Automation.NeoTaskManager;
@@ -29,6 +30,10 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     private readonly HashSet<uint> completedNodeIds = [];
 
+    private int countRevisionAtRouteStart;
+
+    private bool awaitingRouteStartCount;
+
     public int ExtractedLocationCount => Treasure.Count;
 
     public int ExtractedBronzeCount => Treasure.Count(item => item.Type == TreasureData.BronzeSgbId);
@@ -41,9 +46,39 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     public int RemainingLocationCount => Math.Max(0, Treasure.Count - CompletedLocationCount);
 
+    public int? RouteStartRemainingChestCount { get; private set; }
+
+    public int SurfaceOpenedThisRun { get; private set; }
+
+    public bool SurfaceCountValidationCompleted { get; private set; }
+
     protected override bool RebuildRouteOnResume => ZoneData.IsInNorthHorn();
 
     protected override bool AlwaysUseDemiReturnAtRouteStart => ZoneData.IsInNorthHorn();
+
+    protected override bool UpdateTreasureCountAtRouteStart => true;
+
+    protected override float GetInactiveNodeConfirmationRange()
+    {
+        // North Horn must actually reach each extracted placement before it
+        // can be counted as absent; object-table streaming is not guaranteed
+        // at the configurable 75m detection range.
+        return ZoneData.IsInNorthHorn() ? 6f : base.GetInactiveNodeConfirmationRange();
+    }
+
+    public void UpdateCountValidation()
+    {
+        if (!awaitingRouteStartCount ||
+            !module.Tracker.CountInitialised ||
+            module.Tracker.CountRevision <= countRevisionAtRouteStart)
+        {
+            return;
+        }
+
+        RouteStartRemainingChestCount = module.Tracker.RemainingChests;
+        awaitingRouteStartCount = false;
+        Svc.Log.Info($"Magi Treasuresight confirmed {RouteStartRemainingChestCount} remaining coffers at route start.");
+    }
 
     protected override IEnumerable<IGameObject> GetValidObjects()
     {
@@ -182,7 +217,6 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
         return () =>
         {
-            var interactionSent = false;
             return Chain.Create()
                 .BreakIf(() => !IsCurrentCofferNear(entityId, position))
                 .Then(new TaskManagerTask(() =>
@@ -190,16 +224,15 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                     var current = GameObjectInteraction.Resolve(entityId);
                     if (current == null || !current.IsTargetable || current.IsDead)
                     {
-                        if (interactionSent)
-                        {
-                            module.Tracker.RecordAcquired(entityId, treasureType);
-                            MarkCompletedLocation(position);
-                        }
-
                         return true;
                     }
 
                     if (!IsRandomCoffer(current) || Player.DistanceTo(current) > DISTANCE_TO_NODE_TO_USE)
+                    {
+                        return false;
+                    }
+
+                    if (Player.IsMoving || VnavmeshIpc.IsMovementActive(vnav))
                     {
                         return false;
                     }
@@ -209,8 +242,18 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                         return false;
                     }
 
-                    interactionSent |= GameObjectInteraction.TryInteract(entityId, DISTANCE_TO_NODE_TO_USE, position);
-                    return false;
+                    if (!GameObjectInteraction.TryInteract(entityId, DISTANCE_TO_NODE_TO_USE, position))
+                    {
+                        return false;
+                    }
+
+                    if (module.Tracker.RecordAcquired(entityId, treasureType))
+                    {
+                        SurfaceOpenedThisRun++;
+                    }
+
+                    MarkCompletedLocation(position);
+                    return true;
                 }, new TaskManagerConfiguration { TimeLimitMS = 10000, ShowError = false }));
         };
     }
@@ -231,8 +274,17 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override string GetRouteDescription()
     {
         return ZoneData.IsInNorthHorn()
-            ? "開始・再開時に必ずデミデジョンを行い、北部ベースキャンプから地上の全宝箱座標を一度ずつ巡回します。地下空洞は対象外です。"
+            ? "開始・再開時にデミデジョンとマギ・トレジャーサーチを実行し、北部ベースキャンプから地上の全宝箱座標を一度ずつ巡回します。南西高台は乱気流で出入りし、地下空洞は対象外です。"
             : base.GetRouteDescription();
+    }
+
+    protected override void OnHuntStarted(bool isResuming)
+    {
+        countRevisionAtRouteStart = module.Tracker.CountRevision;
+        awaitingRouteStartCount = true;
+        RouteStartRemainingChestCount = null;
+        SurfaceOpenedThisRun = 0;
+        SurfaceCountValidationCompleted = false;
     }
 
     protected override bool ShouldSkipStep(PathfinderStep step)
@@ -255,6 +307,16 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
         completedNodeIds.Clear();
         Treasure.Clear();
         ExcludedUndergroundLocationCount = 0;
+        awaitingRouteStartCount = false;
+        RouteStartRemainingChestCount = null;
+        SurfaceOpenedThisRun = 0;
+        SurfaceCountValidationCompleted = false;
+    }
+
+    protected override void Teardown()
+    {
+        SurfaceCountValidationCompleted = RouteStartRemainingChestCount.HasValue;
+        base.Teardown();
     }
 
     private IPathfinder CreateEmptyPathfinder()
