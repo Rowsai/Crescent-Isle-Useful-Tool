@@ -5,7 +5,7 @@
       "buttons": {
         "toggle_config": "Toggle config window",
         "emergency_stop": "Emergency Stop",
-        "toggle_illegal_mode": "Toggle Illegal Mode"
+        "toggle_automation_mode": "Toggle Automation Mode"
       }
     }
   }

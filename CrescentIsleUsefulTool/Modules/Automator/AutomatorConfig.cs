@@ -14,7 +14,7 @@ public class AutomatorConfig : ModuleConfig
     public Dictionary<uint, bool> NorthFates { get; set; } = [];
 
     [Checkbox]
-    [Illegal]
+    [Automation]
     [RequiredPlugin("Lifestream", "vnavmesh")]
     [Label("generic.label.enabled")]
     [Tooltip("enabled")]

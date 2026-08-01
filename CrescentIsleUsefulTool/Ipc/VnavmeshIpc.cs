@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using Dalamud.Plugin.Ipc.Exceptions;
 using ECommons.DalamudServices;
+using ECommons.GameHelpers;
 using Ocelot.IPC;
 
 namespace CrescentIsleUsefulTool.Ipc;
@@ -90,6 +91,46 @@ public static class VnavmeshIpc
             Svc.Log.Warning(ex, "Failed to query vnavmesh movement state.");
             return false;
         }
+    }
+
+    public static bool TryIsPathfinding(VNavmesh? vnav, out bool isPathfinding)
+    {
+        isPathfinding = false;
+        if (vnav == null || !vnav.IsReady())
+        {
+            return false;
+        }
+
+        try
+        {
+            isPathfinding = vnav.IsPathfinding();
+            return true;
+        }
+        catch (IpcNotReadyError)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning(ex, "Failed to query vnavmesh pathfinding state.");
+            return false;
+        }
+    }
+
+    public static bool IsMovementActive(VNavmesh? vnav)
+    {
+        if (Player.IsMoving)
+        {
+            return true;
+        }
+
+        // If IPC state cannot be read, fail closed and do not begin a cast.
+        if (!TryIsRunning(vnav, out var isRunning) || isRunning)
+        {
+            return true;
+        }
+
+        return !TryIsPathfinding(vnav, out var isPathfinding) || isPathfinding;
     }
 
     public static bool TryPathfindAndMoveTo(VNavmesh? vnav, Vector3 destination, bool fly)

@@ -4,6 +4,7 @@ using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
 using CrescentIsleUsefulTool.Ipc;
+using CrescentIsleUsefulTool.Modules.Buff;
 using CrescentIsleUsefulTool.Modules.CriticalEncounters;
 using CrescentIsleUsefulTool.Modules.Fates;
 using CrescentIsleUsefulTool.Modules.MagicPot;
@@ -147,7 +148,7 @@ public class Automator
 
         // CE/FATE destinations take precedence over an already queued utility
         // chain (for example, returning to an aetheryte).  Selecting them before
-        // the chain guard lets illegal mode immediately start travelling to the
+        // the chain guard lets automation mode immediately start travelling to the
         // event's target point when it appears.
         if (Activity == null)
         {
@@ -204,6 +205,20 @@ public class Automator
         }
 
         var baseCamp = (ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp).GetData();
+        var buffs = module.GetModule<BuffModule>();
+        if (buffs.ShouldRefreshBuffs() && ZoneData.GetNearbyKnowledgeCrystal(60f).Any())
+        {
+            idleTime = 0;
+            SetRuntimeStatus("知識バフを更新しています。");
+            Plugin.Chain.Submit(ChainHelper.ReturnChain(new ReturnChainConfig
+            {
+                ForceReturn = false,
+                ApproachAetheryte = true,
+                ApplyBuffs = true,
+            }));
+            return;
+        }
+
         if (baseCamp.DistanceToPlayer() <= AethernetData.DISTANCE)
         {
             idleTime = 0;
@@ -369,6 +384,7 @@ public class Automator
         Plugin.Chain.Submit(ChainHelper.ReturnChain(new ReturnChainConfig
         {
             ForceReturn = true,
+            WaitForStationaryDemiReturn = true,
             ApproachAetheryte = true,
             UpdateTreasureCount = true,
         }));

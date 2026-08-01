@@ -4,7 +4,7 @@ using System.Linq;
 namespace CrescentIsleUsefulTool.Data;
 
 /// <summary>
-/// Curated North Horn content data used by the illegal-mode settings page.
+/// Curated North Horn content data used by the automation-mode settings page.
 /// IDs and locations are aligned with the in-game content rows.
 /// </summary>
 public static class NorthHornContent

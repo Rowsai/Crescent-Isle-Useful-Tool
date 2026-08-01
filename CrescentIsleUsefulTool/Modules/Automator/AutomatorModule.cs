@@ -20,7 +20,7 @@ public class AutomatorModule : Module
     public override bool IsEnabled
     {
         // Keep the module updating while dependencies are still starting so
-        // illegal mode can remain ON and resume automatically when IPC is ready.
+        // Automation mode can remain ON and resume automatically when IPC is ready.
         get => Config.Enabled;
     }
 
@@ -62,20 +62,20 @@ public class AutomatorModule : Module
         PluginConfig.Save();
     }
 
-    public static void ToggleIllegalMode(OcelotPlugin plugin)
+    public static void ToggleAutomationMode(OcelotPlugin plugin)
     {
         var module = plugin.Modules.GetModule<AutomatorModule>();
         if (!module.Config.Enabled)
         {
-            module.EnableIllegalMode();
+            module.EnableAutomationMode();
         }
         else
         {
-            module.DisableIllegalMode();
+            module.DisableAutomationMode();
         }
     }
 
-    public void EnableIllegalMode()
+    public void EnableAutomationMode()
     {
         var wasDisabled = !Config.Enabled;
         Config.Enabled = true;
@@ -89,7 +89,7 @@ public class AutomatorModule : Module
         }
     }
 
-    public void DisableIllegalMode()
+    public void DisableAutomationMode()
     {
         var wasEnabled = Config.Enabled;
         Config.Enabled = false;

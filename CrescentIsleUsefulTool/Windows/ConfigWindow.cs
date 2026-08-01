@@ -115,14 +115,14 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
             return;
         }
 
-        if (!ImGui.BeginTabBar("##IllegalModeSettingsAreas"))
+        if (!ImGui.BeginTabBar("##AutomationModeSettingsAreas"))
         {
             return;
         }
 
         if (ImGui.BeginTabItem("基本・南征編"))
         {
-            ImGui.TextDisabled("不正モードの共通動作と南征編の対象を設定します。");
+            ImGui.TextDisabled("自動操作モードの共通動作と南征編の対象を設定します。");
             ImGui.Spacing();
             activeModule.RenderConfigUi(context);
             ImGui.EndTabItem();

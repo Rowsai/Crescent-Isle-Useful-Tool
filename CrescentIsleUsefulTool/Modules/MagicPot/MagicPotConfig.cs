@@ -11,7 +11,7 @@ public class MagicPotConfig : ModuleConfig
 
     [Checkbox]
     [Experimental]
-    [Illegal]
+    [Automation]
     [RequiredPlugin("vnavmesh")]
     [DependsOn(nameof(Enabled))]
     [Label("modules.magic_pot.config.treasure_search.label")]

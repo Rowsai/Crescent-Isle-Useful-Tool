@@ -5,7 +5,7 @@
       "buttons": {
         "toggle_config": "设置窗口",
         "emergency_stop": "紧急停止",
-        "toggle_illegal_mode": "切换非法模式状态"
+        "toggle_automation_mode": "切换自动操作模式状态"
       }
     }
   }

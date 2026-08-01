@@ -12,7 +12,7 @@ public class Panel
     public void Draw(AutomatorModule module)
     {
         CrescentTheme.Card(
-            "IllegalModeStatus",
+            "AutomationModeStatus",
             module.T("panel.title"),
             () =>
             {
@@ -51,17 +51,17 @@ public class Panel
     }
 
     /// <summary>
-    /// North Horn content belongs on the illegal-mode configuration page,
+    /// North Horn content belongs on the automation-mode configuration page,
     /// not on the main status page.  The generated South Horn settings remain
     /// above this compact two-tab catalogue.
     /// </summary>
     public void DrawConfigurationCatalog(AutomatorModule module)
     {
-        ImGui.TextColored(CrescentTheme.AccentSoft, "北征編 不正モード対象");
+        ImGui.TextColored(CrescentTheme.AccentSoft, "北征編 自動操作対象");
         ImGui.TextDisabled("自動移動の対象を選択できます。チェックを外した項目は無視されます。");
         ImGui.Spacing();
 
-        if (!ImGui.BeginTabBar("##NorthHornIllegalModeCatalog"))
+        if (!ImGui.BeginTabBar("##NorthHornAutomationModeCatalog"))
         {
             return;
         }

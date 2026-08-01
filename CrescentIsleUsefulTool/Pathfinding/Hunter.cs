@@ -246,7 +246,7 @@ public abstract class Hunter
                 {
                     if (ownerModule.TryGetModule<AutomatorModule>(out var automator) && automator?.Config.Enabled == true)
                     {
-                        automator.DisableIllegalMode();
+                        automator.DisableAutomationMode();
                     }
 
                     var isResuming = HasPausedProgress;
@@ -452,7 +452,7 @@ public abstract class Hunter
         {
             ApproachAetheryte = true,
             ForceReturn = ZoneData.IsInNorthHorn(),
-            ApplyBuffs = false,
+            ApplyBuffs = true,
         }));
 
         return true;

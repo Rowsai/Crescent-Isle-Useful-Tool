@@ -159,12 +159,12 @@ public class RenderContext
         ImGui.SameLine();
     }
 
-    public bool IsIllegal()
+    public bool IsAutomation()
     {
-        return prop.GetCustomAttribute<IllegalAttribute>() != null;
+        return prop.GetCustomAttribute<AutomationAttribute>() != null;
     }
 
-    public void Illegal()
+    public void Automation()
     {
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1.0f, 0.2f, 0.2f, 1.0f));
         ImGui.PushFont(UiBuilder.IconFont);
@@ -174,7 +174,7 @@ public class RenderContext
 
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("May lead to a ban. Use at your own risk.");
+            ImGui.SetTooltip("自動操作機能です。利用環境のルールを確認して使用してください。");
         }
 
         ImGui.SameLine();

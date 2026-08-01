@@ -21,17 +21,17 @@
         },
         "reapply_threshold": {
           "label": "Reapply Threshold",
-          "tooltip": "The number of minutes remaining on the lowest buff to refresh them all during automatic execution."
+          "tooltip": "In Automation Mode, refresh all four buffs when any buff is missing or its remaining time reaches this threshold."
         },
         "use_inquiring_mind": {
           "label": "Use Inquiring Mind",
-          "tooltip":  "Temporarily switch to Freelancer, use Inquiring Mind, then return to the previous support job."
+          "tooltip":  "Temporarily switch to Freelancer, use Inquiring Mind to apply all four 30-minute buffs, then return to the previous support job."
         }
       },
       "panel": {
         "title": "Buffs",
         "button": {
-          "tooltip": "Switch to Freelancer, use Inquiring Mind when enabled, then return to your original phantom job."
+          "tooltip": "Switch to Freelancer, use Inquiring Mind to apply all four 30-minute buffs, then return to your original support job."
         }
       }
     }

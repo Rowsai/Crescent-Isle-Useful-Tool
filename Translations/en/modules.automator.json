@@ -2,9 +2,9 @@
   "modules": {
     "automator": {
       "config": {
-        "title": "Illegal Mode",
+        "title": "Automation Mode",
         "enabled": {
-          "tooltip": "Illegal Mode is a bot, its actions are not dictated by your config outside of this section."
+          "tooltip": "Automates travel to FATEs and CEs and provides combat assistance according to this section."
         },
         "ai_provider": {
           "label": "AI provider",
@@ -160,7 +160,7 @@
         }
       },
       "panel": {
-        "title": "Illegal Mode",
+        "title": "Automation Mode",
         "activity": {
           "label": "Activity",
           "none": "None"
@@ -170,12 +170,12 @@
           "none": "Waiting for Activity"
         },
         "lens": {
-          "title": "Crescent Isle Useful Tool - Illegal Mode"
+          "title": "Crescent Isle Useful Tool - Automation Mode"
         }
       },
       "messages": {
-        "on": "[Crescent Isle Useful Tool] Illegal Mode On",
-        "off": "[Crescent Isle Useful Tool] Illegal Mode Off"
+        "on": "[Crescent Isle Useful Tool] Automation Mode On",
+        "off": "[Crescent Isle Useful Tool] Automation Mode Off"
       }
     }
   }

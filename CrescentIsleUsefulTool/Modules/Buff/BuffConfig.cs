@@ -6,13 +6,13 @@ namespace CrescentIsleUsefulTool.Modules.Buff;
 public class BuffConfig : ModuleConfig
 {
     [Checkbox]
-    [IllegalModeCompatible]
+    [AutomationModeCompatible]
     [Label("generic.label.enabled")]
     public bool Enabled { get; set; } = true;
 
-    [Checkbox] [IllegalModeCompatible] public bool UseInquiringMind { get; set; } = false;
+    [Checkbox] [AutomationModeCompatible] public bool UseInquiringMind { get; set; } = false;
 
     [IntRange(0, 25)]
-    [IllegalModeCompatible]
+    [AutomationModeCompatible]
     public int ReapplyThreshold { get; set; } = 10;
 }

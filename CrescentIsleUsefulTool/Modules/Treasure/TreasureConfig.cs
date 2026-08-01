@@ -29,7 +29,7 @@ public class TreasureConfig : ModuleConfig
 
     [Checkbox]
     [Experimental]
-    [Illegal]
+    [Automation]
     [RequiredPlugin("vnavmesh", "Lifestream")]
     [DependsOn(nameof(Enabled))]
     [Label("modules.treasure.config.show_hunt_button.label")]
