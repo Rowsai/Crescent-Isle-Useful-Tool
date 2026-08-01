@@ -52,7 +52,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         );
 
         chain.Then(ChainHelper.TreasureSightChain(config.UpdateTreasureCount));
-        // Every successful Demi-Déjion performs the Inquiring Mind check.
+        // Every successful Demi-Déjion performs the たんきゅうしん check.
         // ApplyBuffs remains useful for callers already at camp, but can no
         // longer suppress this post-return safety check.
         chain.ConditionalThen(_ => config.ApplyBuffs || performedDemiReturn, ApplyBuffs);
@@ -107,7 +107,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         var buffs = module.GetModule<BuffModule>();
         var crystalPosition = Vector3.Zero;
 
-        var chain = Chain.Create("Return.InquiringMindCheck");
+        var chain = Chain.Create("Return.TankyushinCheck");
         chain.RunIf(buffs.ShouldRefreshBuffs);
         chain.Then(new TaskManagerTask(() =>
         {

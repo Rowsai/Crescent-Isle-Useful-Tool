@@ -31,6 +31,11 @@ public class Panel
                     ImGui.TextDisabled($"合計 {module.Hunter.ExtractedLocationCount}");
 
                     ImGui.TextDisabled($"巡回済み {module.Hunter.CompletedLocationCount} / 残り {module.Hunter.RemainingLocationCount}");
+                    if (module.Hunter.UnreachableLocationCount > 0)
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextColored(CrescentTheme.Warning, $"到達不可 {module.Hunter.UnreachableLocationCount}");
+                    }
                     if (module.Hunter.ExcludedUndergroundLocationCount > 0)
                     {
                         ImGui.SameLine();

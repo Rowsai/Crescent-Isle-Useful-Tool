@@ -19,8 +19,6 @@ public sealed class NorthHornPathfinder(
     IReadOnlyCollection<TreasureData.TreasureDatum> treasure,
     float teleportCost = 50f) : IPathfinder
 {
-    private const float TeleportSavingThreshold = 25f;
-
     // LVD_zone_01 EventRange trigger and paired PopRange landing positions
     // from North Horn's planmap.lgb. Each pair provides an up and down route.
     private static readonly TurbulencePair WestTurbulence = new(
@@ -177,11 +175,9 @@ public sealed class NorthHornPathfinder(
         var teleportRouteCost = Vector3.Distance(from, source.Position)
                                 + teleportCost
                                 + Vector3.Distance(target.Destination, destination);
-        if (teleportRouteCost + TeleportSavingThreshold >= directCost)
-        {
-            return new TravelPlan(directCost, directSteps);
-        }
-
+        // Different aethernet catchments are treated as separate navigable
+        // regions. Never choose an apparently shorter straight line across a
+        // cliff, ravine, or unloaded navmesh island.
         return new TravelPlan(teleportRouteCost,
         [
             PathfinderStep.WalkToAethernet(source.Aethernet),

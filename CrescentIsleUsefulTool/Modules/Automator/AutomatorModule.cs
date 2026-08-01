@@ -7,6 +7,7 @@ using Ocelot.IPC;
 using Ocelot.Modules;
 using Ocelot.Windows;
 using CrescentIsleUsefulTool.Enums;
+using CrescentIsleUsefulTool.Modules.Buff.Chains;
 
 namespace CrescentIsleUsefulTool.Modules.Automator;
 
@@ -86,6 +87,9 @@ public class AutomatorModule : Module
 
         if (wasDisabled)
         {
+            Plugin.Chain.Abort();
+            Plugin.Chain.Submit(new TankyushinActivationChain());
+            automator.SetRuntimeStatus("たんきゅうしんを使用し、元のサポートジョブへ戻しています。");
             Svc.Chat.Print(T("messages.on"));
         }
     }

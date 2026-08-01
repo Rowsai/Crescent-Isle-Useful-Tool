@@ -6,15 +6,16 @@ namespace CrescentIsleUsefulTool.Modules.Buff.Chains;
 
 public class AllBuffsChain(BuffModule module) : ChainFactory
 {
-    private readonly Job StartingJob = Job.Current;
+    private Job startingJob = Job.Freelancer;
 
     protected override Chain Create(Chain chain)
     {
         chain
+            .Then(_ => startingJob = Job.Current)
             .Then(new FreelancerBuffChain(module))
-            // Inquiring Mind is cast as Freelancer, then return to the job
+            // たんきゅうしん is cast as Freelancer, then return to the job
             // that was active before the buff sequence started.
-            .Then(StartingJob.ChangeToChain);
+            .Then(() => startingJob.ChangeToChain());
 
         return chain;
     }

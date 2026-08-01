@@ -10,6 +10,8 @@ public static partial class Actions
 
         public static Action Treasuresight { get; private set; } = new(ActionType.GeneralAction, 32);
 
-        public static Action InquiringMind { get; private set; } = new(ActionType.GeneralAction, 33);
+        // GeneralAction 33 resolves to Action row 46606. Invoke the concrete
+        // action row so logs and action hooks consistently report ID 46606.
+        public static Action Tankyushin { get; private set; } = new(ActionType.Action, 46606);
     }
 }

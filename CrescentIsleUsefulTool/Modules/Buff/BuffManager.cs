@@ -51,7 +51,7 @@ public class BuffManager
             .Select(buff => Player.Status.Get(buff))
             .ToList();
 
-        // Inquiring Mind applies all four 30-minute knowledge buffs. A single
+        // たんきゅうしん applies all four 30-minute knowledge buffs. A single
         // missing buff must trigger a refresh even when the others are fresh.
         return timers.Any(status => status == null)
             ? 0

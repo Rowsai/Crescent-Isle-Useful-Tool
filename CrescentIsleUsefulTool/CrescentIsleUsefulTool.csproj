@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
     <PropertyGroup>
-        <Version>4.4.0</Version>
+        <Version>4.5.0</Version>
         <AssemblyName>CrescentIsleUsefulTool</AssemblyName>
         <RootNamespace>CrescentIsleUsefulTool</RootNamespace>
         <Description>クレセントアイルの南征編・北征編向け総合探索支援ツール。</Description>

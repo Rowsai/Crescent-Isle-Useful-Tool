@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Threading.Tasks;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Ipc;
+using CrescentIsleUsefulTool.Modules.Buff.Chains;
 using CrescentIsleUsefulTool.Pathfinding;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.Automation.NeoTaskManager;
@@ -30,6 +31,8 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     private readonly HashSet<uint> completedNodeIds = [];
 
+    private readonly HashSet<uint> unreachableNodeIds = [];
+
     private int countRevisionAtRouteStart;
 
     private bool awaitingRouteStartCount;
@@ -44,7 +47,9 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     public int CompletedLocationCount => Treasure.Count(item => completedNodeIds.Contains(item.Id));
 
-    public int RemainingLocationCount => Math.Max(0, Treasure.Count - CompletedLocationCount);
+    public int UnreachableLocationCount => Treasure.Count(item => unreachableNodeIds.Contains(item.Id));
+
+    public int RemainingLocationCount => Math.Max(0, Treasure.Count - CompletedLocationCount - UnreachableLocationCount);
 
     public int? RouteStartRemainingChestCount { get; private set; }
 
@@ -205,7 +210,7 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override bool HasAvailablePathfinderNodes()
     {
         return ZoneData.IsInNorthHorn()
-            ? Treasure.Any(item => !completedNodeIds.Contains(item.Id))
+            ? Treasure.Any(item => !completedNodeIds.Contains(item.Id) && !unreachableNodeIds.Contains(item.Id))
             : Treasure.Count > 0;
     }
 
@@ -263,7 +268,7 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
         if (ZoneData.IsInNorthHorn())
         {
             return Treasure
-                .Where(item => !completedNodeIds.Contains(item.Id))
+                .Where(item => !completedNodeIds.Contains(item.Id) && !unreachableNodeIds.Contains(item.Id))
                 .Select(item => item.Id)
                 .ToList();
         }
@@ -274,12 +279,14 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override string GetRouteDescription()
     {
         return ZoneData.IsInNorthHorn()
-            ? "開始・再開時にデミデジョンとマギ・トレジャーサーチを実行し、北部ベースキャンプから地上の全宝箱座標を一度ずつ巡回します。南西高台は乱気流で出入りし、地下空洞は対象外です。"
+            ? "開始時にたんきゅうしん、デミデジョン、マギ・トレジャーサーチを実行します。到達可能な地上座標だけを巡回し、南西高台は乱気流で出入りします。地下空洞は対象外です。"
             : base.GetRouteDescription();
     }
 
     protected override void OnHuntStarted(bool isResuming)
     {
+        Plugin.Chain.Abort();
+        Plugin.Chain.Submit(new TankyushinActivationChain());
         countRevisionAtRouteStart = module.Tracker.CountRevision;
         awaitingRouteStartCount = true;
         RouteStartRemainingChestCount = null;
@@ -291,20 +298,34 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     {
         return ZoneData.IsInNorthHorn() &&
                step.Type == PathfinderStepType.WalkToNode &&
-               completedNodeIds.Contains(step.NodeId);
+               (completedNodeIds.Contains(step.NodeId) || unreachableNodeIds.Contains(step.NodeId));
     }
 
     protected override void OnStepCompleted(PathfinderStep step)
     {
         if (ZoneData.IsInNorthHorn() && step.Type == PathfinderStepType.WalkToNode)
         {
+            if (unreachableNodeIds.Contains(step.NodeId))
+            {
+                return;
+            }
+
             completedNodeIds.Add(step.NodeId);
+        }
+    }
+
+    protected override void OnStepUnreachable(PathfinderStep step)
+    {
+        if (ZoneData.IsInNorthHorn() && step.Type == PathfinderStepType.WalkToNode && step.NodeId != 0)
+        {
+            unreachableNodeIds.Add(step.NodeId);
         }
     }
 
     protected override void OnProgressReset()
     {
         completedNodeIds.Clear();
+        unreachableNodeIds.Clear();
         Treasure.Clear();
         ExcludedUndergroundLocationCount = 0;
         awaitingRouteStartCount = false;

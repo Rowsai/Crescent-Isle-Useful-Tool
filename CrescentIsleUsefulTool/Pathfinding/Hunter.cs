@@ -16,6 +16,7 @@ using CrescentIsleUsefulTool.Modules.StateManager;
 using CrescentIsleUsefulTool.Ui;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.Automation.NeoTaskManager;
+using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using Dalamud.Bindings.ImGui;
 using Ocelot;
@@ -52,6 +53,34 @@ public abstract class Hunter
     protected Stopwatch stopwatch = new();
 
     protected string runtimeStatus = "停止中";
+
+    private Task<List<Vector3>>? reachablePathTask;
+
+    private int reachablePathStepIndex = -1;
+
+    private Vector3 reachablePathDestination;
+
+    private Vector3 reachablePathEndpoint;
+
+    private DateTime reachablePathRequestedAtUtc = DateTime.MinValue;
+
+    private int reachablePathFollowFailures;
+
+    private int movementProgressStepIndex = -1;
+
+    private Vector3 lastMovementPosition;
+
+    private float lastMovementDistance = float.MaxValue;
+
+    private DateTime lastMovementProgressAtUtc = DateTime.MinValue;
+
+    private DateTime lastDestinationProgressAtUtc = DateTime.MinValue;
+
+    private bool currentStepUnreachable;
+
+    private bool movementPathStarted;
+
+    private bool skipNextAethernetTeleport;
 
     private bool HasPausedProgress => !running && Steps.Count > 0 && stepIndex < Steps.Count;
 
@@ -144,6 +173,10 @@ public abstract class Hunter
     }
 
     protected virtual void OnStepCompleted(PathfinderStep step)
+    {
+    }
+
+    protected virtual void OnStepUnreachable(PathfinderStep step)
     {
     }
 
@@ -261,6 +294,7 @@ public abstract class Hunter
                     if (ShouldSkipStep(step))
                     {
                         OnStepCompleted(step);
+                        ResetMovementValidation();
                         stepIndex++;
                         return;
                     }
@@ -268,7 +302,16 @@ public abstract class Hunter
                     var handler = Handlers[CurrentStep.Type];
                     if (handler())
                     {
-                        OnStepCompleted(step);
+                        if (currentStepUnreachable)
+                        {
+                            OnStepUnreachable(step);
+                        }
+                        else
+                        {
+                            OnStepCompleted(step);
+                        }
+
+                        ResetMovementValidation();
                         stepIndex++;
                     }
                 })
@@ -400,6 +443,8 @@ public abstract class Hunter
         Plugin.Chain.Abort();
         StepProcessor.Abort();
         pathfinder = null;
+        ResetMovementValidation();
+        skipNextAethernetTeleport = false;
     }
 
     public void ResetForTerritoryChange()
@@ -414,6 +459,8 @@ public abstract class Hunter
         VnavmeshIpc.TryStop(vnav);
         Plugin.Chain.Abort();
         StepProcessor.Abort();
+        ResetMovementValidation();
+        skipNextAethernetTeleport = false;
 
         // A route that has already been constructed is intentionally retained.
         // If pathfinding had not completed yet, rebuild it on the next start.
@@ -437,6 +484,8 @@ public abstract class Hunter
         StepProcessor.Abort();
         pathfinder = null;
         runtimeStatus = "停止中";
+        ResetMovementValidation();
+        skipNextAethernetTeleport = false;
         OnProgressReset();
     }
 
@@ -455,7 +504,18 @@ public abstract class Hunter
         VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
         if (!isRunning)
         {
-            VnavmeshIpc.TryPathfindAndMoveTo(vnav, movementDestination, false);
+            var movementState = StartReachableMovement(movementDestination);
+            if (movementState == ReachableMovementState.Unreachable)
+            {
+                MarkCurrentStepUnreachable("ナビメッシュ上で到達できない宝箱座標をスキップしました。");
+                return true;
+            }
+        }
+
+        if (HasMovementStalled(distance))
+        {
+            MarkCurrentStepUnreachable("移動の進捗がないため、この宝箱座標をスキップしました。");
+            return true;
         }
 
         if (!Player.Mounted && distance > DISTANCE_TO_NODE_TO_USE)
@@ -527,10 +587,29 @@ public abstract class Hunter
     {
         var destination = CurrentStep.Aethernet.GetData().Position;
 
+        distance = Player.DistanceTo(destination);
+        if (distance <= 4f)
+        {
+            skipNextAethernetTeleport = false;
+            VnavmeshIpc.TryStop(vnav);
+            return true;
+        }
+
         VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
         if (!isRunning)
         {
-            VnavmeshIpc.TryPathfindAndMoveTo(vnav, destination, false);
+            var movementState = StartReachableMovement(destination);
+            if (movementState == ReachableMovementState.Unreachable)
+            {
+                MarkCurrentStepUnreachable("魔導通路まで到達できないため、この移動区間を中止しました。");
+                return true;
+            }
+        }
+
+        if (HasMovementStalled(distance))
+        {
+            MarkCurrentStepUnreachable("魔導通路への移動が停止したため、この移動区間を中止しました。");
+            return true;
         }
 
         if (!Player.Mounted)
@@ -538,13 +617,19 @@ public abstract class Hunter
             StepProcessor.SubmitFront(ChainHelper.MountChain());
         }
 
-        distance = Player.DistanceTo(destination);
-        return distance <= 4f;
+        return false;
     }
 
     private bool TeleportToAethernetHandler()
     {
         distance = 0;
+        if (skipNextAethernetTeleport)
+        {
+            skipNextAethernetTeleport = false;
+            MarkCurrentStepUnreachable("到達できなかった魔導通路からの転送をスキップしました。");
+            return true;
+        }
+
         StepProcessor.SubmitFront(ChainHelper.TeleportChain(CurrentStep.Aethernet));
         return true;
     }
@@ -564,7 +649,18 @@ public abstract class Hunter
         VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
         if (!isRunning)
         {
-            VnavmeshIpc.TryPathfindAndMoveTo(vnav, trigger, false);
+            var movementState = StartReachableMovement(trigger);
+            if (movementState == ReachableMovementState.Unreachable)
+            {
+                MarkCurrentStepUnreachable("乱気流まで到達できないため、この経路をスキップしました。");
+                return true;
+            }
+        }
+
+        if (HasMovementStalled(distance))
+        {
+            MarkCurrentStepUnreachable("乱気流への移動が停止したため、この経路をスキップしました。");
+            return true;
         }
 
         if (!Player.Mounted && distance > DISTANCE_TO_NODE_TO_USE)
@@ -583,8 +679,160 @@ public abstract class Hunter
         return MathF.Abs(Player.Position.Y - arrival.Y) <= 15f && horizontalDistance <= 35f;
     }
 
+    private ReachableMovementState StartReachableMovement(Vector3 destination)
+    {
+        if (reachablePathStepIndex != stepIndex || Vector3.Distance(reachablePathDestination, destination) > 2f)
+        {
+            reachablePathTask = null;
+            reachablePathStepIndex = stepIndex;
+            reachablePathDestination = destination;
+            reachablePathEndpoint = destination;
+            reachablePathFollowFailures = 0;
+            if (VnavmeshIpc.TryFindPointOnFloor(vnav, destination, false, 4f, out var floorPoint) && floorPoint.HasValue)
+            {
+                reachablePathEndpoint = floorPoint.Value;
+            }
+            reachablePathRequestedAtUtc = DateTime.UtcNow;
+        }
+
+        if (reachablePathTask == null)
+        {
+            if (!VnavmeshIpc.TryPathfind(vnav, Player.Position, reachablePathEndpoint, false, out reachablePathTask) || reachablePathTask == null)
+            {
+                return DateTime.UtcNow - reachablePathRequestedAtUtc > TimeSpan.FromSeconds(15)
+                    ? ReachableMovementState.Unreachable
+                    : ReachableMovementState.Pending;
+            }
+
+            reachablePathRequestedAtUtc = DateTime.UtcNow;
+            return ReachableMovementState.Pending;
+        }
+
+        if (!reachablePathTask.IsCompleted)
+        {
+            return DateTime.UtcNow - reachablePathRequestedAtUtc > TimeSpan.FromSeconds(15)
+                ? ReachableMovementState.Unreachable
+                : ReachableMovementState.Pending;
+        }
+
+        if (reachablePathTask.IsCanceled || reachablePathTask.IsFaulted)
+        {
+            return ReachableMovementState.Unreachable;
+        }
+
+        List<Vector3> path;
+        try
+        {
+            path = reachablePathTask.Result;
+        }
+        catch
+        {
+            return ReachableMovementState.Unreachable;
+        }
+
+        reachablePathTask = null;
+        if (path.Count == 0)
+        {
+            return ReachableMovementState.Unreachable;
+        }
+
+        if (!VnavmeshIpc.TryFollowPath(vnav, path, false))
+        {
+            reachablePathFollowFailures++;
+            return reachablePathFollowFailures >= 3
+                ? ReachableMovementState.Unreachable
+                : ReachableMovementState.Pending;
+        }
+
+        reachablePathFollowFailures = 0;
+        movementPathStarted = true;
+        if (movementProgressStepIndex != stepIndex)
+        {
+            ResetMovementProgress();
+        }
+        return ReachableMovementState.Started;
+    }
+
+    private bool HasMovementStalled(float currentDistance)
+    {
+        if (movementProgressStepIndex != stepIndex)
+        {
+            ResetMovementProgress(currentDistance);
+            return false;
+        }
+
+        VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+        if (!isRunning && !Player.IsMoving)
+        {
+            return movementPathStarted && DateTime.UtcNow - lastMovementProgressAtUtc > TimeSpan.FromSeconds(20);
+        }
+
+        var moved = Vector3.Distance(Player.Position, lastMovementPosition);
+        if (moved >= 1.5f)
+        {
+            lastMovementPosition = Player.Position;
+            lastMovementProgressAtUtc = DateTime.UtcNow;
+        }
+
+        if (currentDistance <= lastMovementDistance - 1f)
+        {
+            lastMovementDistance = currentDistance;
+            lastDestinationProgressAtUtc = DateTime.UtcNow;
+        }
+
+        return DateTime.UtcNow - lastMovementProgressAtUtc > TimeSpan.FromSeconds(20) ||
+               DateTime.UtcNow - lastDestinationProgressAtUtc > TimeSpan.FromSeconds(90);
+    }
+
+    private void ResetMovementProgress(float currentDistance = float.MaxValue)
+    {
+        movementProgressStepIndex = stepIndex;
+        lastMovementPosition = Player.Position;
+        lastMovementDistance = currentDistance;
+        lastMovementProgressAtUtc = DateTime.UtcNow;
+        lastDestinationProgressAtUtc = DateTime.UtcNow;
+    }
+
+    private void MarkCurrentStepUnreachable(string message)
+    {
+        currentStepUnreachable = true;
+        if (CurrentStep.Type == PathfinderStepType.WalkToAethernet)
+        {
+            // A travel segment stores the destination aethernet on its next
+            // step, so enum equality cannot identify a failed source walk.
+            skipNextAethernetTeleport = true;
+        }
+        runtimeStatus = message;
+        VnavmeshIpc.TryStop(vnav);
+        Svc.Log.Warning(message);
+    }
+
+    private void ResetMovementValidation()
+    {
+        reachablePathTask = null;
+        reachablePathStepIndex = -1;
+        reachablePathDestination = default;
+        reachablePathEndpoint = default;
+        reachablePathRequestedAtUtc = DateTime.MinValue;
+        reachablePathFollowFailures = 0;
+        movementProgressStepIndex = -1;
+        lastMovementPosition = default;
+        lastMovementDistance = float.MaxValue;
+        lastMovementProgressAtUtc = DateTime.MinValue;
+        lastDestinationProgressAtUtc = DateTime.MinValue;
+        currentStepUnreachable = false;
+        movementPathStarted = false;
+    }
+
     private static bool HasQueueWork(ChainQueue queue)
     {
         return queue.IsRunning || queue.QueueCount > 0;
+    }
+
+    private enum ReachableMovementState
+    {
+        Pending,
+        Started,
+        Unreachable,
     }
 }

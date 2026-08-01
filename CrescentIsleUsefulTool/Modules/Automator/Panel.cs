@@ -18,38 +18,26 @@ public class Panel
             module.T("panel.title"),
             () =>
             {
-                CrescentTheme.Status(
-                    "稼働ステータス",
-                    module.IsEnabled ? "ON" : "OFF",
-                    module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted
-                );
-
-                ImGui.Spacing();
                 DrawQuickControls(module);
-
-                ImGui.Separator();
                 ImGui.Spacing();
-                CrescentTheme.Status(
-                    "現在の操作モード",
-                    GetActiveMode(module),
-                    module.IsEnabled ? CrescentTheme.AccentSoft : CrescentTheme.Muted
-                );
+                if (ImGui.BeginTable("##AutomationSummary", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchSame))
+                {
+                    ImGui.TableNextColumn();
+                    CrescentTheme.Status("ステータス", module.IsEnabled ? "ON" : "OFF", module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted);
+                    ImGui.TableNextColumn();
+                    ImGui.TextDisabled("操作モード");
+                    ImGui.TextColored(module.IsEnabled ? CrescentTheme.AccentSoft : CrescentTheme.Muted, GetActiveMode(module));
+                    ImGui.TableNextColumn();
+                    ImGui.TextDisabled(module.T("panel.activity_state.label"));
+                    ImGui.TextColored(
+                        module.automator.Activity == null ? CrescentTheme.Muted : CrescentTheme.AccentSoft,
+                        module.automator.Activity?.state.ToLabel() ?? module.T("panel.activity_state.none"));
+                    ImGui.EndTable();
+                }
 
-                ImGui.Spacing();
-                ImGui.TextDisabled("実行状態");
+                ImGui.TextDisabled("現在の処理");
+                ImGui.SameLine();
                 ImGui.TextWrapped(module.automator.RuntimeStatus);
-
-                ImGui.Spacing();
-                ImGui.TextDisabled(module.T("panel.activity.label"));
-                var name = module.automator.Activity?.GetName() ?? module.T("panel.activity.none");
-                ImGui.TextUnformatted(name);
-
-                ImGui.Spacing();
-                ImGui.TextDisabled(module.T("panel.activity_state.label"));
-                ImGui.TextColored(
-                    module.automator.Activity == null ? CrescentTheme.Muted : CrescentTheme.AccentSoft,
-                    module.automator.Activity?.state.ToLabel() ?? module.T("panel.activity_state.none")
-                );
             },
             "マジックポット → CE → FATE の優先順で移動します。",
             module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted
@@ -58,31 +46,29 @@ public class Panel
 
     private static void DrawQuickControls(AutomatorModule module)
     {
-        var automationEnabled = module.Config.Enabled;
-        if (ImGui.Checkbox("自動操作モード##MainAutomationToggle", ref automationEnabled))
-        {
-            if (automationEnabled)
-            {
-                module.EnableAutomationMode();
-            }
-            else
-            {
-                module.DisableAutomationMode();
-            }
-        }
-
-        ImGui.Spacing();
         var flags = ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchSame;
-        if (!ImGui.BeginTable("##MainActivityTravelControls", 2, flags))
+        if (!ImGui.BeginTable("##MainActivityTravelControls", 3, flags))
         {
             return;
         }
 
         ImGui.TableNextColumn();
+        if (ImGui.Button(module.IsEnabled ? "自動操作 OFF##MainAutomationToggle" : "自動操作 ON##MainAutomationToggle", new System.Numerics.Vector2(-1f, 0f)))
+        {
+            if (module.IsEnabled)
+            {
+                module.DisableAutomationMode();
+            }
+            else
+            {
+                module.EnableAutomationMode();
+            }
+        }
+
+        ImGui.TableNextColumn();
         var ceEnabled = module.Config.DoCriticalEncounters;
-        CrescentTheme.Status("CE自動操作", ceEnabled ? "ON" : "OFF", ceEnabled ? CrescentTheme.Success : CrescentTheme.Muted);
         if (ImGui.Button(
-                ceEnabled ? "CE自動操作を終了##MainCeToggle" : "CE自動操作を開始##MainCeToggle",
+                ceEnabled ? "CE移動 OFF##MainCeToggle" : "CE移動 ON##MainCeToggle",
                 new System.Numerics.Vector2(-1f, 0f)))
         {
             module.SetCriticalEncounterTravelEnabled(!ceEnabled);
@@ -91,9 +77,8 @@ public class Panel
 
         ImGui.TableNextColumn();
         var fateEnabled = module.Config.DoFates;
-        CrescentTheme.Status("FATE自動操作", fateEnabled ? "ON" : "OFF", fateEnabled ? CrescentTheme.Success : CrescentTheme.Muted);
         if (ImGui.Button(
-                fateEnabled ? "FATE自動操作を終了##MainFateToggle" : "FATE自動操作を開始##MainFateToggle",
+                fateEnabled ? "FATE移動 OFF##MainFateToggle" : "FATE移動 ON##MainFateToggle",
                 new System.Numerics.Vector2(-1f, 0f)))
         {
             module.SetFateTravelEnabled(!fateEnabled);
@@ -102,10 +87,9 @@ public class Panel
 
         ImGui.EndTable();
 
-        if (!ceEnabled && !fateEnabled)
-        {
-            ImGui.TextColored(CrescentTheme.Warning, "CE・FATEともにOFFのため、拠点で待機します。");
-        }
+        ImGui.TextColored(
+            !ceEnabled && !fateEnabled ? CrescentTheme.Warning : CrescentTheme.Muted,
+            !ceEnabled && !fateEnabled ? "CE・FATEともにOFF：拠点待機" : "優先順位：マジックポット → CE → FATE");
     }
 
     private static string GetActiveMode(AutomatorModule module)

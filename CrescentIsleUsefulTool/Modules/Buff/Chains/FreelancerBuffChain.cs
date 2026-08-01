@@ -3,7 +3,7 @@ using CrescentIsleUsefulTool.Data;
 
 namespace CrescentIsleUsefulTool.Modules.Buff.Chains;
 
-public class FreelancerBuffChain(BuffModule module) : BuffChain(Job.Freelancer, AppliedStatuses, Actions.Freelancer.InquiringMind)
+public class FreelancerBuffChain(BuffModule module) : BuffChain(Job.Freelancer, AppliedStatuses, Actions.Freelancer.Tankyushin)
 {
     public static readonly PlayerStatus[] AppliedStatuses =
     [
