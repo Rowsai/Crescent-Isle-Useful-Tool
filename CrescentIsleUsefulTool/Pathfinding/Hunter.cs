@@ -110,6 +110,32 @@ public abstract class Hunter
         return true;
     }
 
+    /// <summary>
+    /// Rebuild the remaining route when a paused hunt is started again.
+    /// The treasure hunter uses this to return to camp first while retaining
+    /// the coordinates that were already completed.
+    /// </summary>
+    protected virtual bool RebuildRouteOnResume => false;
+
+    /// <summary>
+    /// Allows an explicit route-start reset to use Demi-Déjion even inside
+    /// the base-camp safety radius. This remains disabled for ordinary hunts.
+    /// </summary>
+    protected virtual bool AlwaysUseDemiReturnAtRouteStart => false;
+
+    protected virtual bool ShouldSkipStep(PathfinderStep step)
+    {
+        return false;
+    }
+
+    protected virtual void OnStepCompleted(PathfinderStep step)
+    {
+    }
+
+    protected virtual void OnProgressReset()
+    {
+    }
+
     public void Update()
     {
         if (!running)
@@ -216,9 +242,18 @@ public abstract class Hunter
             Chain.Create("Hunter.Run")
                 .Then(_ =>
                 {
+                    var step = CurrentStep;
+                    if (ShouldSkipStep(step))
+                    {
+                        OnStepCompleted(step);
+                        stepIndex++;
+                        return;
+                    }
+
                     var handler = Handlers[CurrentStep.Type];
                     if (handler())
                     {
+                        OnStepCompleted(step);
                         stepIndex++;
                     }
                 })
@@ -250,11 +285,21 @@ public abstract class Hunter
                     }
 
                     var isResuming = HasPausedProgress;
+                    var rebuildFromRouteStart = isResuming && RebuildRouteOnResume;
+                    if (rebuildFromRouteStart)
+                    {
+                        stepIndex = 0;
+                        Steps.Clear();
+                        pathfinder = null;
+                    }
+
                     running = true;
                     if (isResuming)
                     {
                         stopwatch.Start();
-                        runtimeStatus = $"中断地点から再開します（{stepIndex}/{Steps.Count}）。";
+                        runtimeStatus = rebuildFromRouteStart
+                            ? "完了済み座標を除外し、ベースキャンプから経路を再構築します。"
+                            : $"中断地点から再開します（{stepIndex}/{Steps.Count}）。";
                     }
                     else
                     {
@@ -376,6 +421,7 @@ public abstract class Hunter
         StepProcessor.Abort();
         pathfinder = null;
         runtimeStatus = "停止中";
+        OnProgressReset();
     }
 
 
@@ -452,6 +498,8 @@ public abstract class Hunter
         {
             ApproachAetheryte = true,
             ForceReturn = ZoneData.IsInNorthHorn(),
+            AlwaysUseDemiReturn = AlwaysUseDemiReturnAtRouteStart,
+            WaitForStationaryDemiReturn = AlwaysUseDemiReturnAtRouteStart,
             ApplyBuffs = true,
         }));
 

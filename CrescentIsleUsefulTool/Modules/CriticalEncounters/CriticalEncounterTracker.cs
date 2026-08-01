@@ -51,7 +51,6 @@ public class CriticalEncounterTracker
                 continue;
             }
 
-            var data = EventData.GetCriticalEncounter(id);
             snapshots[id] = new CriticalEncounterSnapshot(
                 id,
                 ev.State,
@@ -59,7 +58,7 @@ public class CriticalEncounterTracker
                 (uint)ev.EventType,
                 (uint)ev.StartTimestamp,
                 ev.MapMarker.Position,
-                data.InternalName);
+                EventData.GetCriticalEncounterDisplayName(id));
         }
 
         CriticalEncounters = snapshots;

@@ -29,6 +29,16 @@ public class Panel
                     ImGui.TextColored(TreasureModule.Silver, $"白銀 {module.Hunter.ExtractedSilverCount}");
                     ImGui.SameLine();
                     ImGui.TextDisabled($"合計 {module.Hunter.ExtractedLocationCount}");
+
+                    ImGui.TextDisabled($"巡回済み {module.Hunter.CompletedLocationCount} / 残り {module.Hunter.RemainingLocationCount}");
+                    if (module.Hunter.ExcludedUndergroundLocationCount > 0)
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextColored(
+                            CrescentTheme.Muted,
+                            $"地下空洞 {module.Hunter.ExcludedUndergroundLocationCount}件を除外"
+                        );
+                    }
                 }
             }
 

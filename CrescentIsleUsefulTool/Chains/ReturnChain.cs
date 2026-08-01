@@ -96,7 +96,8 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
     private bool ShouldUseDemiReturn()
     {
-        return !ZoneData.IsNearBaseCamp() &&
+        return config.AlwaysUseDemiReturn ||
+               !ZoneData.IsNearBaseCamp() &&
                (config.ForceReturn || GetCostToReturn() < GetCostToWalk());
     }
 

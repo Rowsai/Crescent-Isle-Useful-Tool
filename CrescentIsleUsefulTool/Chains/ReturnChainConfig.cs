@@ -7,6 +7,13 @@ public struct ReturnChainConfig()
     public bool ForceReturn { get; init; } = false;
 
     /// <summary>
+    /// Cast Demi-Déjion even when the player is already inside the normal
+    /// base-camp no-return radius. Treasure hunting uses this only for its
+    /// explicit route-start reset; activity automation keeps the safety radius.
+    /// </summary>
+    public bool AlwaysUseDemiReturn { get; init; } = false;
+
+    /// <summary>
     /// Wait until movement has completely stopped before a required
     /// activity-completion return. Other callers skip Demi-Déjion when a
     /// movement route is already active, preventing an unrelated route from

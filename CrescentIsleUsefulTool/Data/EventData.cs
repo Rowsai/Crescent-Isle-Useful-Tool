@@ -1,7 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using CrescentIsleUsefulTool.Enums;
+using Dalamud.Game;
+using ECommons.DalamudServices;
 
 namespace CrescentIsleUsefulTool.Data;
 
@@ -67,6 +70,40 @@ public struct EventData
             Type = EventType.CriticalEncounter,
             InternalName = north.Id == id ? north.EnglishName : $"Critical Encounter {id}",
         };
+    }
+
+    /// <summary>
+    /// Resolves the Japanese CE name independently of the client/data-manager
+    /// default language. Newly curated North Horn names take priority, while
+    /// the Japanese DynamicEvent sheet covers South Horn and future rows.
+    /// </summary>
+    public static string GetCriticalEncounterDisplayName(uint id)
+    {
+        var north = NorthHornContent.CriticalEncounters.FirstOrDefault(encounter => encounter.Id == id);
+        if (north.Id == id && !string.IsNullOrWhiteSpace(north.JapaneseName))
+        {
+            return north.JapaneseName;
+        }
+
+        try
+        {
+            var sheet = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.DynamicEvent>(ClientLanguage.Japanese);
+            if (sheet.TryGetRow(id, out var row))
+            {
+                var name = row.Name.ToString();
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    return name;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Debug(ex, $"Unable to resolve the Japanese CE name for row {id}.");
+        }
+
+        var data = GetCriticalEncounter(id);
+        return string.IsNullOrWhiteSpace(data.InternalName) ? $"CE {id}" : data.InternalName;
     }
 
     public readonly static Dictionary<uint, EventData> Fates = new()

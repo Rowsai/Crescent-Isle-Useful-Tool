@@ -20,13 +20,30 @@ namespace CrescentIsleUsefulTool.Modules.Treasure;
 
 public class TreasureHunt(TreasureModule module) : Hunter(module)
 {
+    // North Horn's internal planmap contains 68 random-coffer placements.
+    // Nine belong to subterranean spaces below this elevation; the surface
+    // route deliberately excludes them.
+    private const float UndergroundElevationCeiling = -10f;
+
     private List<TreasureData.TreasureDatum> Treasure = [];
+
+    private readonly HashSet<uint> completedNodeIds = [];
 
     public int ExtractedLocationCount => Treasure.Count;
 
     public int ExtractedBronzeCount => Treasure.Count(item => item.Type == TreasureData.BronzeSgbId);
 
     public int ExtractedSilverCount => Treasure.Count(item => item.Type == TreasureData.SilverSgbId);
+
+    public int ExcludedUndergroundLocationCount { get; private set; }
+
+    public int CompletedLocationCount => Treasure.Count(item => completedNodeIds.Contains(item.Id));
+
+    public int RemainingLocationCount => Math.Max(0, Treasure.Count - CompletedLocationCount);
+
+    protected override bool RebuildRouteOnResume => ZoneData.IsInNorthHorn();
+
+    protected override bool AlwaysUseDemiReturnAtRouteStart => ZoneData.IsInNorthHorn();
 
     protected override IEnumerable<IGameObject> GetValidObjects()
     {
@@ -41,12 +58,20 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     protected override Vector3 GetDestinationForCurrentStep()
     {
-        return Treasure.First(t => t.Id == CurrentStep.NodeId).Position;
+        var treasure = Treasure.FirstOrDefault(item => item.Id == CurrentStep.NodeId);
+        if (treasure.Id == CurrentStep.NodeId)
+        {
+            return treasure.Position;
+        }
+
+        Svc.Log.Warning($"Treasure route node {CurrentStep.NodeId} is no longer present; skipping it safely.");
+        return Player.Position;
     }
 
     protected override unsafe IPathfinder CreatePathfinder()
     {
         Treasure.Clear();
+        ExcludedUndergroundLocationCount = 0;
         var layoutWorld = LayoutWorld.Instance();
         var layout = layoutWorld == null ? null : layoutWorld->ActiveLayout;
         if (layout == null)
@@ -70,8 +95,13 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
             var transform = instance->GetTransformImpl();
             var position = transform->Translation;
-            if (position.Y <= -10f)
+            if (position.Y <= UndergroundElevationCeiling)
             {
+                if (ZoneData.IsInNorthHorn())
+                {
+                    ExcludedUndergroundLocationCount++;
+                }
+
                 continue;
             }
 
@@ -89,16 +119,36 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                 continue;
             }
 
-            Treasure.Add(new TreasureData.TreasureDatum(treasureRowId, position, sgbId));
+            // BaseId identifies the coffer type, not the placement. North Horn
+            // reuses the same BaseId at many coordinates, so the layout's
+            // stable InstanceKey is the route node ID.
+            var nodeId = treasureRowId;
+            if (ZoneData.IsInNorthHorn())
+            {
+                nodeId = instance->Id.InstanceKey;
+                if (nodeId == 0 || Treasure.Any(item => item.Id == nodeId))
+                {
+                    nodeId = CreateSyntheticNodeId(Treasure.Count);
+                    while (Treasure.Any(item => item.Id == nodeId))
+                    {
+                        nodeId++;
+                    }
+                }
+            }
+
+            Treasure.Add(new TreasureData.TreasureDatum(nodeId, position, sgbId));
         }
 
-        Treasure = Treasure
-            .GroupBy(item => item.Id)
-            .Select(group => group.First())
+        Treasure = (ZoneData.IsInNorthHorn()
+                ? Treasure
+                : Treasure.GroupBy(item => item.Id).Select(group => group.First()))
             .OrderBy(item => item.Id)
             .ToList();
 
-        Svc.Log.Info($"Extracted treasure placements from active layout: {Treasure.Count} total ({ExtractedBronzeCount} bronze, {ExtractedSilverCount} silver).");
+        Svc.Log.Info(
+            $"Extracted surface treasure placements from active layout: {Treasure.Count} total " +
+            $"({ExtractedBronzeCount} bronze, {ExtractedSilverCount} silver), " +
+            $"{ExcludedUndergroundLocationCount} underground placements excluded.");
 
         if (ZoneData.IsInNorthHorn())
         {
@@ -119,7 +169,9 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     protected override bool HasAvailablePathfinderNodes()
     {
-        return Treasure.Count > 0;
+        return ZoneData.IsInNorthHorn()
+            ? Treasure.Any(item => !completedNodeIds.Contains(item.Id))
+            : Treasure.Count > 0;
     }
 
     protected override Func<Chain> GetInteractionChain(IGameObject obj)
@@ -141,6 +193,7 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                         if (interactionSent)
                         {
                             module.Tracker.RecordAcquired(entityId, treasureType);
+                            MarkCompletedLocation(position);
                         }
 
                         return true;
@@ -166,7 +219,10 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     {
         if (ZoneData.IsInNorthHorn())
         {
-            return Treasure.Select(item => item.Id).Distinct().ToList();
+            return Treasure
+                .Where(item => !completedNodeIds.Contains(item.Id))
+                .Select(item => item.Id)
+                .ToList();
         }
 
         return TreasureData.Levels.Where(node => node.Value <= max).Select(node => node.Key).ToList();
@@ -175,8 +231,30 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override string GetRouteDescription()
     {
         return ZoneData.IsInNorthHorn()
-            ? "北部ベースキャンプから開始し、内部データで検出した青銅・白銀の宝箱を近い順に巡回します。"
+            ? "開始・再開時に必ずデミデジョンを行い、北部ベースキャンプから地上の全宝箱座標を一度ずつ巡回します。地下空洞は対象外です。"
             : base.GetRouteDescription();
+    }
+
+    protected override bool ShouldSkipStep(PathfinderStep step)
+    {
+        return ZoneData.IsInNorthHorn() &&
+               step.Type == PathfinderStepType.WalkToNode &&
+               completedNodeIds.Contains(step.NodeId);
+    }
+
+    protected override void OnStepCompleted(PathfinderStep step)
+    {
+        if (ZoneData.IsInNorthHorn() && step.Type == PathfinderStepType.WalkToNode)
+        {
+            completedNodeIds.Add(step.NodeId);
+        }
+    }
+
+    protected override void OnProgressReset()
+    {
+        completedNodeIds.Clear();
+        Treasure.Clear();
+        ExcludedUndergroundLocationCount = 0;
     }
 
     private IPathfinder CreateEmptyPathfinder()
@@ -194,6 +272,23 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     {
         var current = GameObjectInteraction.Resolve(entityId);
         return current != null && IsRandomCoffer(current) && Vector3.Distance(current.Position, expectedPosition) <= 5f;
+    }
+
+    private void MarkCompletedLocation(Vector3 position)
+    {
+        var nearest = Treasure
+            .Where(item => Vector3.Distance(item.Position, position) <= 5f)
+            .OrderBy(item => Vector3.Distance(item.Position, position))
+            .FirstOrDefault();
+        if (nearest.Id != 0)
+        {
+            completedNodeIds.Add(nearest.Id);
+        }
+    }
+
+    private static uint CreateSyntheticNodeId(int index)
+    {
+        return 0xF0000000u + (uint)index;
     }
 
     private sealed class EmptyTreasurePathfinder : IPathfinder

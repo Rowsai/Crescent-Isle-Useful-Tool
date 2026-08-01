@@ -71,19 +71,36 @@ public class Panel
             }
         }
 
-        ImGui.SameLine();
-        var ceEnabled = module.Config.DoCriticalEncounters;
-        if (ImGui.Checkbox("CEへ移動##MainCeToggle", ref ceEnabled))
+        ImGui.Spacing();
+        var flags = ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchSame;
+        if (!ImGui.BeginTable("##MainActivityTravelControls", 2, flags))
         {
-            module.SetCriticalEncounterTravelEnabled(ceEnabled);
+            return;
         }
 
-        ImGui.SameLine();
-        var fateEnabled = module.Config.DoFates;
-        if (ImGui.Checkbox("FATEへ移動##MainFateToggle", ref fateEnabled))
+        ImGui.TableNextColumn();
+        var ceEnabled = module.Config.DoCriticalEncounters;
+        CrescentTheme.Status("CE自動操作", ceEnabled ? "ON" : "OFF", ceEnabled ? CrescentTheme.Success : CrescentTheme.Muted);
+        if (ImGui.Button(
+                ceEnabled ? "CE自動操作を終了##MainCeToggle" : "CE自動操作を開始##MainCeToggle",
+                new System.Numerics.Vector2(-1f, 0f)))
         {
-            module.SetFateTravelEnabled(fateEnabled);
+            module.SetCriticalEncounterTravelEnabled(!ceEnabled);
+            ceEnabled = !ceEnabled;
         }
+
+        ImGui.TableNextColumn();
+        var fateEnabled = module.Config.DoFates;
+        CrescentTheme.Status("FATE自動操作", fateEnabled ? "ON" : "OFF", fateEnabled ? CrescentTheme.Success : CrescentTheme.Muted);
+        if (ImGui.Button(
+                fateEnabled ? "FATE自動操作を終了##MainFateToggle" : "FATE自動操作を開始##MainFateToggle",
+                new System.Numerics.Vector2(-1f, 0f)))
+        {
+            module.SetFateTravelEnabled(!fateEnabled);
+            fateEnabled = !fateEnabled;
+        }
+
+        ImGui.EndTable();
 
         if (!ceEnabled && !fateEnabled)
         {
