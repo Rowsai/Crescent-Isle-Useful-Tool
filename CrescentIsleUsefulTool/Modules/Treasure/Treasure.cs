@@ -1,88 +1,47 @@
-using System.Linq;
 using System.Numerics;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
-using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using XIVTreasure = Lumina.Excel.Sheets.Treasure;
-using TreasureFlags = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags;
 
 namespace CrescentIsleUsefulTool.Modules.Treasure;
 
-public class Treasure(IGameObject obj)
+/// <summary>
+/// Managed treasure snapshot. The source IGameObject is deliberately not
+/// retained because treasure objects are destroyed as soon as they open.
+/// </summary>
+public sealed class Treasure
 {
-    public ulong Id
+    public ulong Id { get; }
+
+    public uint BaseId { get; }
+
+    public Vector3 Position { get; }
+
+    private TreasureType Type { get; }
+
+    public Treasure(IGameObject obj)
     {
-        get => obj.EntityId;
-    }
-
-    private TreasureFlags LastFlags = TreasureFlags.None;
-
-    public unsafe bool CheckOpened()
-    {
-        var gameObject = (GameObject*)(void*)obj.Address;
-        if (gameObject == null)
-        {
-            return false;
-        }
-
-        var instance = (FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure*)gameObject;
-        var currentFlags = instance->Flags;
-
-        if (currentFlags != LastFlags)
-        {
-            var wasNotOpened = !LastFlags.HasFlag(TreasureFlags.Opened);
-            var isNowOpened = currentFlags.HasFlag(TreasureFlags.Opened);
-
-            LastFlags = currentFlags;
-
-            if (wasNotOpened && isNowOpened)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-
-    private XIVTreasure? GetData()
-    {
-        return Svc.Data.GetExcelSheet<XIVTreasure>().ToList().FirstOrDefault(t => t.RowId == obj.BaseId);
+        Id = obj.EntityId;
+        BaseId = obj.BaseId;
+        Position = obj.Position;
+        Type = ResolveType(BaseId);
     }
 
     public bool IsValid()
     {
-        return obj.IsValid() && obj is { IsDead: false, IsTargetable: true };
+        var current = GameObjectInteraction.Resolve(Id);
+        return current is { IsDead: false, IsTargetable: true } && current.BaseId == BaseId;
     }
 
-    public Vector3 GetPosition()
-    {
-        return obj.Position;
-    }
+    public Vector3 GetPosition() => Position;
 
-    private uint? GetModelId()
-    {
-        return GetData()?.SGB.RowId;
-    }
-
-    public TreasureType GetTreasureType()
-    {
-        switch (GetModelId() ?? 0)
-        {
-            case TreasureData.SilverSgbId:
-                return TreasureType.Silver;
-            case TreasureData.BronzeSgbId:
-                return TreasureType.Bronze;
-            default:
-                return TreasureType.Unknown;
-        }
-    }
+    public TreasureType GetTreasureType() => Type;
 
     public Vector4 GetColor()
     {
-        return GetTreasureType() switch
+        return Type switch
         {
             TreasureType.Bronze => TreasureModule.Bronze,
             TreasureType.Silver => TreasureModule.Silver,
@@ -92,11 +51,26 @@ public class Treasure(IGameObject obj)
 
     public string GetName()
     {
-        return GetTreasureType() switch
+        return Type switch
         {
             TreasureType.Bronze => "Bronze Treasure Coffer",
             TreasureType.Silver => "Silver Treasure Coffer",
             _ => "Unknown Treasure Coffer",
+        };
+    }
+
+    private static TreasureType ResolveType(uint baseId)
+    {
+        if (!Svc.Data.GetExcelSheet<XIVTreasure>().TryGetRow(baseId, out var data))
+        {
+            return TreasureType.Unknown;
+        }
+
+        return data.SGB.RowId switch
+        {
+            TreasureData.SilverSgbId => TreasureType.Silver,
+            TreasureData.BronzeSgbId => TreasureType.Bronze,
+            _ => TreasureType.Unknown,
         };
     }
 }

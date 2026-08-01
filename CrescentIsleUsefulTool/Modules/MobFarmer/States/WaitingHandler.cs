@@ -17,6 +17,6 @@ public class WaitingHandler(MobFarmerModule module) : FarmerPhaseHandler(module)
 
         var mobs = Module.Scanner.Mobs;
 
-        return mobs.Count() >= Module.Config.MinimumMobsToStartLoop ? FarmerPhase.Buffing : null;
+        return mobs.Count >= Module.Config.MinimumMobsToStartLoop ? FarmerPhase.Buffing : null;
     }
 }

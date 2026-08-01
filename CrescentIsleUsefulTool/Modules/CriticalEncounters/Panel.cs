@@ -92,7 +92,7 @@ public class Panel
 
                 if (module.TryGetModule<TeleporterModule>(out var teleporter) && teleporter!.IsReady())
                 {
-                    var start = ev.MapMarker.Position;
+                    var start = ev.Position;
 
                     teleporter.teleporter.Button(data.Aethernet, start, ev.Name.ToString(), $"ce_{ev.DynamicEventId}", data);
                 }
@@ -103,7 +103,7 @@ public class Panel
     }
 
 
-    private void HandleTower(DynamicEvent ev, CriticalEncountersModule module)
+    private void HandleTower(CriticalEncounterSnapshot ev, CriticalEncountersModule module)
     {
         if (!module.Config.TrackForkedTower || ev.State == DynamicEventState.Battle)
         {

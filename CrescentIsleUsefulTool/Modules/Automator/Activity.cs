@@ -102,7 +102,9 @@ public abstract class Activity
                     ChainHelper.PathfindToAndWait(baseCamp.Position, AethernetData.DISTANCE))
                 .ConditionalThen(_ => activityShard.DistanceToPlayer() > AethernetData.DISTANCE, ChainHelper.TeleportChain(activityShard.Aethernet))
                 .Debug("Waiting for lifestream to not be 'busy'")
-                .Then(new TaskManagerTask(() => !lifestream.IsBusy(), new TaskManagerConfiguration { TimeLimitMS = 30000 }))
+                .Then(new TaskManagerTask(
+                    () => LifestreamIpc.TryIsBusy(lifestream, out var isBusy) && !isBusy,
+                    new TaskManagerConfiguration { TimeLimitMS = 30000 }))
                 .ConditionalThen(_ => ShouldMountToPathfindTo(GetPosition()), ChainHelper.MountChain())
                 .Then(new PathfindingChain(vnav, GetPosition(), data));
 

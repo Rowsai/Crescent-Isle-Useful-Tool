@@ -5,6 +5,7 @@ using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Ocelot.Ui;
 using Ocelot.Windows;
+using ECommons.DalamudServices;
 
 namespace Ocelot.Modules;
 
@@ -21,6 +22,8 @@ public class ModuleManager
     private List<IModule> toRender = [];
 
     private List<IModule> toInitialize = [];
+
+    private readonly Dictionary<string, DateTime> lastRuntimeErrors = new();
 
     public void Add(Module<OcelotPlugin, IOcelotConfig> module)
     {
@@ -86,24 +89,42 @@ public class ModuleManager
 
     public void PreUpdate(UpdateContext context)
     {
-        toUpdate = modules.Where(m => m is { ShouldUpdate: true, HasRequiredIPCs: true } && m.UpdateLimit.ShouldUpdate(m, context)).ToList();
-        toUpdate.ForEach(m => m.PreUpdate(context));
+        toUpdate = [];
+        foreach (var module in modules)
+        {
+            if (TryEvaluate(module, "select for update", () =>
+                    module is { ShouldUpdate: true, HasRequiredIPCs: true } && module.UpdateLimit.ShouldUpdate(module, context),
+                    out var shouldUpdate) && shouldUpdate)
+            {
+                toUpdate.Add(module);
+            }
+        }
+
+        toUpdate.ForEach(module => RunSafely(module, "pre-update", () => module.PreUpdate(context)));
     }
 
     public void Update(UpdateContext context)
     {
-        toUpdate.ForEach(m => m.Update(context));
+        toUpdate.ForEach(module => RunSafely(module, "update", () => module.Update(context)));
     }
 
     public void PostUpdate(UpdateContext context)
     {
-        toUpdate.ForEach(m => m.PostUpdate(context));
+        toUpdate.ForEach(module => RunSafely(module, "post-update", () => module.PostUpdate(context)));
     }
 
     public void Render(RenderContext context)
     {
-        toRender = modules.Where(m => m is { ShouldRender: true, HasRequiredIPCs: true }).ToList();
-        toRender.ForEach(m => m.Render(context));
+        toRender = [];
+        foreach (var module in modules)
+        {
+            if (TryEvaluate(module, "select for render", () => module is { ShouldRender: true, HasRequiredIPCs: true }, out var shouldRender) && shouldRender)
+            {
+                toRender.Add(module);
+            }
+        }
+
+        toRender.ForEach(module => RunSafely(module, "world render", () => module.Render(context)));
     }
 
     public void RenderMainUi(RenderContext context)
@@ -113,7 +134,9 @@ public class ModuleManager
         {
             OcelotUi.Region($"OcelotMain##{module.GetType().FullName}", () =>
             {
-                if (module.RenderMainUi(context))
+                var rendered = false;
+                RunSafely(module, "main UI render", () => rendered = module.RenderMainUi(context));
+                if (rendered)
                 {
                     OcelotUi.VSpace();
                     if (module != orderedModules.Last())
@@ -130,7 +153,7 @@ public class ModuleManager
         var orderedModules = GetModulesByConfigOrder().ToList();
         foreach (var module in orderedModules)
         {
-            module.RenderConfigUi(context);
+            RunSafely(module, "config UI render", () => module.RenderConfigUi(context));
             OcelotUi.VSpace();
             if (module != orderedModules.Last())
             {
@@ -141,12 +164,12 @@ public class ModuleManager
 
     public void OnChatMessage(XivChatType type, int timestamp, SeString sender, SeString message, bool isHandled)
     {
-        toUpdate.ForEach(m => m.OnChatMessage(type, timestamp, sender, message, isHandled));
+        toUpdate.ForEach(module => RunSafely(module, "chat message", () => module.OnChatMessage(type, timestamp, sender, message, isHandled)));
     }
 
     public void OnTerritoryChanged(uint id)
     {
-        toUpdate.ForEach(m => m.OnTerritoryChanged(id));
+        toUpdate.ForEach(module => RunSafely(module, "territory change", () => module.OnTerritoryChanged(id)));
     }
 
     public T GetModule<T>() where T : class, IModule
@@ -177,6 +200,46 @@ public class ModuleManager
 
     public void Dispose()
     {
-        modules.ForEach(m => m.Dispose());
+        modules.ForEach(module => RunSafely(module, "dispose", module.Dispose));
+    }
+
+    private void RunSafely(IModule module, string operation, Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            LogRuntimeError(module, operation, ex);
+        }
+    }
+
+    private bool TryEvaluate(IModule module, string operation, Func<bool> evaluate, out bool result)
+    {
+        try
+        {
+            result = evaluate();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            result = false;
+            LogRuntimeError(module, operation, ex);
+            return false;
+        }
+    }
+
+    private void LogRuntimeError(IModule module, string operation, Exception ex)
+    {
+        var key = $"{module.GetType().FullName}:{operation}";
+        var now = DateTime.UtcNow;
+        if (lastRuntimeErrors.TryGetValue(key, out var last) && now - last < TimeSpan.FromSeconds(5))
+        {
+            return;
+        }
+
+        lastRuntimeErrors[key] = now;
+        Svc.Log.Error(ex, $"Module {module.GetType().Name} failed during {operation}; the operation was isolated.");
     }
 }

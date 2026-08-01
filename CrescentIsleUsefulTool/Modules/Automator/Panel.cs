@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CrescentIsleUsefulTool.Data;
+using CrescentIsleUsefulTool.Enums;
+using CrescentIsleUsefulTool.Modules.MagicPot;
 using CrescentIsleUsefulTool.Ui;
 using Dalamud.Bindings.ImGui;
 
@@ -23,20 +25,24 @@ public class Panel
                 );
 
                 ImGui.Spacing();
+                DrawQuickControls(module);
+
+                ImGui.Separator();
+                ImGui.Spacing();
+                CrescentTheme.Status(
+                    "現在の操作モード",
+                    GetActiveMode(module),
+                    module.IsEnabled ? CrescentTheme.AccentSoft : CrescentTheme.Muted
+                );
+
+                ImGui.Spacing();
                 ImGui.TextDisabled("実行状態");
                 ImGui.TextWrapped(module.automator.RuntimeStatus);
 
                 ImGui.Spacing();
                 ImGui.TextDisabled(module.T("panel.activity.label"));
-            try
-            {
                 var name = module.automator.Activity?.GetName() ?? module.T("panel.activity.none");
                 ImGui.TextUnformatted(name);
-            }
-            catch (AccessViolationException)
-            {
-                    CrescentTheme.EmptyState(module.T("panel.activity.none"));
-            }
 
                 ImGui.Spacing();
                 ImGui.TextDisabled(module.T("panel.activity_state.label"));
@@ -48,6 +54,67 @@ public class Panel
             "マジックポット → CE → FATE の優先順で移動します。",
             module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted
         );
+    }
+
+    private static void DrawQuickControls(AutomatorModule module)
+    {
+        var automationEnabled = module.Config.Enabled;
+        if (ImGui.Checkbox("自動操作モード##MainAutomationToggle", ref automationEnabled))
+        {
+            if (automationEnabled)
+            {
+                module.EnableAutomationMode();
+            }
+            else
+            {
+                module.DisableAutomationMode();
+            }
+        }
+
+        ImGui.SameLine();
+        var ceEnabled = module.Config.DoCriticalEncounters;
+        if (ImGui.Checkbox("CEへ移動##MainCeToggle", ref ceEnabled))
+        {
+            module.SetCriticalEncounterTravelEnabled(ceEnabled);
+        }
+
+        ImGui.SameLine();
+        var fateEnabled = module.Config.DoFates;
+        if (ImGui.Checkbox("FATEへ移動##MainFateToggle", ref fateEnabled))
+        {
+            module.SetFateTravelEnabled(fateEnabled);
+        }
+
+        if (!ceEnabled && !fateEnabled)
+        {
+            ImGui.TextColored(CrescentTheme.Warning, "CE・FATEともにOFFのため、拠点で待機します。");
+        }
+    }
+
+    private static string GetActiveMode(AutomatorModule module)
+    {
+        if (!module.IsEnabled)
+        {
+            return "停止中";
+        }
+
+        if (module.TryGetModule<MagicPotModule>(out var magicPot) && magicPot?.IsTreasureSearchActive == true)
+        {
+            return "マジックポット宝箱探索";
+        }
+
+        var activity = module.automator.Activity;
+        if (activity == null)
+        {
+            return "監視・拠点待機";
+        }
+
+        if (activity.data.IsPot || NorthHornContent.IsMagicPotFate(activity.data.Id))
+        {
+            return "マジックポットFATE";
+        }
+
+        return activity.data.Type == EventType.CriticalEncounter ? "CEへ移動・参加中" : "FATEへ移動・参加中";
     }
 
     /// <summary>

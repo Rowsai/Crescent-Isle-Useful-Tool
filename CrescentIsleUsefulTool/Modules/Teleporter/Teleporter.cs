@@ -3,6 +3,7 @@ using System.Numerics;
 using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
+using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules.Automator;
 using CrescentIsleUsefulTool.Modules.StateManager;
 using Dalamud.Interface;
@@ -21,7 +22,7 @@ public class Teleporter(TeleporterModule module)
 {
     public void Button(Aethernet? aethernet, Vector3 destination, string name, string id, EventData ev)
     {
-        if (!module.TryGetIPCSubscriber<VNavmesh>(out var vnav) || vnav == null || !vnav.IsReady())
+        if (!module.TryGetIPCSubscriber<VNavmesh>(out var vnav) || !VnavmeshIpc.IsOperational(vnav, out _))
         {
             return;
         }
@@ -40,7 +41,7 @@ public class Teleporter(TeleporterModule module)
 
     private void PathfindingButton(Vector3 destination, string name, string id, EventData ev)
     {
-        if (!module.TryGetIPCSubscriber<VNavmesh>(out var vnav) || vnav == null || !vnav.IsReady())
+        if (!module.TryGetIPCSubscriber<VNavmesh>(out var vnav) || !VnavmeshIpc.IsOperational(vnav, out _))
         {
             return;
         }
@@ -50,9 +51,9 @@ public class Teleporter(TeleporterModule module)
             Svc.Log.Info($"Pathfinding to {name} at {destination}");
 
             Plugin.Chain.Submit(() => Chain.Create("Pathfinding")
-                .Then(new PathfindingChain(vnav, destination, ev, 20f))
+                .Then(new PathfindingChain(vnav!, destination, ev, 20f))
                 .ConditionalThen(_ => module.Config.ShouldMount, ChainHelper.MountChain())
-                .WaitUntilNear(vnav, destination, 205f)
+                .WaitUntilNear(vnav!, destination, 205f)
             );
         }
 
@@ -61,7 +62,7 @@ public class Teleporter(TeleporterModule module)
             ImGui.SetTooltip($"Pathfind to {name}");
         }
 
-        if (!module.TryGetIPCSubscriber<Lifestream>(out var lifestream) || lifestream == null || !lifestream.IsReady())
+        if (!module.TryGetIPCSubscriber<Lifestream>(out var lifestream) || !LifestreamIpc.IsOperational(lifestream, out _))
         {
             return;
         }
@@ -71,7 +72,7 @@ public class Teleporter(TeleporterModule module)
 
     private void TeleportButton(Aethernet aethernet, Vector3 destination, string name, string id, EventData ev)
     {
-        if (!module.TryGetIPCSubscriber<Lifestream>(out var lifestream) || lifestream == null || !lifestream.IsReady())
+        if (!module.TryGetIPCSubscriber<Lifestream>(out var lifestream) || !LifestreamIpc.IsOperational(lifestream, out _))
         {
             return;
         }
@@ -86,14 +87,16 @@ public class Teleporter(TeleporterModule module)
                 var chain = Chain.Create("Teleport Sequence")
                     .Then(ChainHelper.TeleportChain(aethernet))
                     .Debug("Waiting for lifestream to not be 'busy'")
-                    .Then(new TaskManagerTask(() => !lifestream.IsBusy(), new TaskManagerConfiguration { TimeLimitMS = 30000 }));
+                    .Then(new TaskManagerTask(
+                        () => LifestreamIpc.TryIsBusy(lifestream, out var isBusy) && !isBusy,
+                        new TaskManagerConfiguration { TimeLimitMS = 30000 }));
 
-                if (module.TryGetIPCSubscriber<VNavmesh>(out var vnav) && vnav != null && vnav.IsReady())
+                if (module.TryGetIPCSubscriber<VNavmesh>(out var vnav) && VnavmeshIpc.IsOperational(vnav, out _))
                 {
                     chain.RunIf(() => module.Config.PathToDestination)
-                        .Then(new PathfindingChain(vnav, destination, ev, 20f))
+                        .Then(new PathfindingChain(vnav!, destination, ev, 20f))
                         .ConditionalThen(_ => module.Config.ShouldMount, ChainHelper.MountChain())
-                        .WaitUntilNear(vnav, destination, 20f);
+                        .WaitUntilNear(vnav!, destination, 20f);
                 }
 
                 return chain;
@@ -163,6 +166,6 @@ public class Teleporter(TeleporterModule module)
 
     public bool IsReady()
     {
-        return module.TryGetIPCSubscriber<Lifestream>(out _);
+        return module.TryGetIPCSubscriber<Lifestream>(out var lifestream) && LifestreamIpc.IsOperational(lifestream, out _);
     }
 }

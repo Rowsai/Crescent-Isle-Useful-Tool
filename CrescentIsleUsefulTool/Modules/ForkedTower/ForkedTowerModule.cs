@@ -120,7 +120,7 @@ public class ForkedTowerModule(Plugin plugin, Config config) : Module(plugin, co
         return groups.SelectMany(group => group.Traps);
     }
 
-    private void OnCriticalEncounterBattle(DynamicEvent ev)
+    private void OnCriticalEncounterBattle(CriticalEncounterSnapshot ev)
     {
         if (ev.EventType < 4)
         {

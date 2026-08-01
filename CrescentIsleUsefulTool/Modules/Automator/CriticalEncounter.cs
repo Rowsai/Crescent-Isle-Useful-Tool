@@ -8,7 +8,6 @@ using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
-using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using Ocelot.Chain;
 using Ocelot.IPC;
@@ -64,14 +63,15 @@ public class CriticalEncounter : Activity
 
                     module.Debug($"Pathfinding to random point: {randomPoint} (MinX: {minX}, MaxX: {maxX}, MinY: {minY}, MaxY: {maxY})");
 
-                    vnav.PathfindAndMoveTo(randomPoint, false);
+                    VnavmeshIpc.TryPathfindAndMoveTo(vnav, randomPoint, false);
                     finalDestination = true;
                 }
             }
 
             if (!finalDestination && IsInZone())
             {
-                if (vnav.IsRunning())
+                VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+                if (isRunning)
                 {
                     VnavmeshIpc.TryStop(vnav);
                 }
@@ -91,10 +91,12 @@ public class CriticalEncounter : Activity
 
             if (finalDestination)
             {
-                return !vnav.IsRunning();
+                VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+                return !isRunning;
             }
 
-            if (!vnav.IsRunning())
+            VnavmeshIpc.TryIsRunning(vnav, out var pathRunning);
+            if (!pathRunning)
             {
                 throw new VnavmeshStoppedException();
             }
@@ -127,7 +129,8 @@ public class CriticalEncounter : Activity
                             throw new Exception("The critical encounter appears to have started without you.");
                         }
 
-                        if (!vnav.IsRunning() && states.GetState() == State.InCombat)
+                        VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+                        if (!isRunning && states.GetState() == State.InCombat)
                         {
                             Actions.TryUnmount();
 
@@ -173,14 +176,14 @@ public class CriticalEncounter : Activity
     protected override Vector3 GetPosition()
     {
         return source.CriticalEncounters.TryGetValue(data.Id, out var encounter)
-            ? encounter.MapMarker.Position
+            ? encounter.Position
             : Player.Position;
     }
 
     public override string GetName()
     {
         return source.CriticalEncounters.TryGetValue(data.Id, out var encounter)
-            ? encounter.Name.ToString()
+            ? encounter.Name
             : data.InternalName;
     }
 
@@ -190,21 +193,11 @@ public class CriticalEncounter : Activity
     }
 
 
-    protected override unsafe bool IsActivityTarget(IBattleNpc obj)
+    protected override bool IsActivityTarget(IBattleNpc obj)
     {
-        try
-        {
-            var battleChara = (BattleChara*)obj.Address;
-
-            var isRelatedToCurrentEvent = battleChara->EventId.EntryId == Player.BattleChara->EventId.EntryId;
-
-            return obj.SubKind == (byte)BattleNpcSubKind.Combatant && isRelatedToCurrentEvent;
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Error(ex.Message);
-            return false;
-        }
+        return obj.SubKind == (byte)BattleNpcSubKind.Combatant
+               && obj.IsValid()
+               && Vector3.Distance(obj.Position, GetPosition()) <= GetRadius() + 15f;
     }
 
     protected override ActivityState GetPostPathfindingState()

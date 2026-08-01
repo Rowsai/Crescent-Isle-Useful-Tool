@@ -14,7 +14,7 @@ public static class ChainPathfinding
         {
             if (EzThrottler.Throttle($"ChainPathfinding.WaitToStartPathfinding", 50))
             {
-                return vnav.IsRunning();
+                return VNavmeshSafe.TryIsRunning(vnav, out var running) && running;
             }
 
             return false;
@@ -34,7 +34,7 @@ public static class ChainPathfinding
         {
             if (EzThrottler.Throttle($"ChainPathfinding.WaitToStopPathfinding", 50))
             {
-                return !vnav.IsRunning();
+                return VNavmeshSafe.TryIsRunning(vnav, out var running) && !running;
             }
 
             return false;
@@ -57,7 +57,7 @@ public static class ChainPathfinding
     {
         return chain
             .Debug($"Pathfinding and moving to {destination}")
-            .Then(_ => vnav.PathfindAndMoveTo(destination, false));
+            .Then(_ => VNavmeshSafe.TryPathfindAndMoveTo(vnav, destination, false));
     }
 
     private static TaskManagerTask WaitUntilNear(VNavmesh vnav, Vector3 destination, float distance = 5f)
@@ -70,7 +70,8 @@ public static class ChainPathfinding
                 return false;
             }
 
-            return !vnav.IsRunning() || Vector3.Distance(player.Position, destination) <= distance;
+            return (VNavmeshSafe.TryIsRunning(vnav, out var running) && !running) ||
+                   Vector3.Distance(player.Position, destination) <= distance;
         }, new TaskManagerConfiguration { TimeLimitMS = 30000 });
     }
 

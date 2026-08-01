@@ -1,4 +1,5 @@
 using System.Linq;
+using CrescentIsleUsefulTool.Ipc;
 using Dalamud.Game.ClientState.Conditions;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
@@ -16,7 +17,7 @@ public class FightingHandler(MobFarmerModule module) : FarmerPhaseHandler(module
         var anyInCombat = Module.Scanner.InCombat.Any();
         if (anyInCombat && EzThrottler.Throttle("Targetter"))
         {
-            Svc.Targets.Target = Module.Scanner.InCombat.Centroid();
+            Svc.Targets.Target = Module.Scanner.ResolveCentroid(Module.Scanner.InCombat);
         }
 
 
@@ -25,9 +26,10 @@ public class FightingHandler(MobFarmerModule module) : FarmerPhaseHandler(module
         if (shouldReturnHome && !anyInCombat)
         {
             var vnav = Module.GetIPCSubscriber<VNavmesh>();
-            if (!vnav.IsRunning())
+            VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+            if (!isRunning)
             {
-                vnav.PathfindAndMoveTo(startingPoint, false);
+                VnavmeshIpc.TryPathfindAndMoveTo(vnav, startingPoint, false);
             }
 
             return Player.DistanceTo(startingPoint) <= 2f ? FarmerPhase.Waiting : null;

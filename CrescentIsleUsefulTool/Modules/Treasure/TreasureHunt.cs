@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using CrescentIsleUsefulTool.ActionHelpers;
 using CrescentIsleUsefulTool.Data;
@@ -12,9 +11,8 @@ using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using ECommons.Throttlers;
-using FFXIVClientStructs.FFXIV.Client.Game.Control;
-using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using Ocelot.Chain;
 using Ocelot.Chain.ChainEx;
 using ObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
@@ -50,14 +48,15 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override unsafe IPathfinder CreatePathfinder()
     {
         Treasure.Clear();
-        var layout = LayoutWorld.Instance()->ActiveLayout;
+        var layoutWorld = LayoutWorld.Instance();
+        var layout = layoutWorld == null ? null : layoutWorld->ActiveLayout;
         if (layout == null)
         {
             Svc.Log.Warning("No active layout");
             return CreateEmptyPathfinder();
         }
 
-        if (!layout->InstancesByType.TryGetValue(InstanceType.Treasure, out var mapPtr, false))
+        if (!layout->InstancesByType.TryGetValue(InstanceType.Treasure, out var mapPtr, false) || mapPtr.Value == null)
         {
             Svc.Log.Warning("No active treasure map");
             return CreateEmptyPathfinder();
@@ -65,6 +64,11 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
         foreach (ILayoutInstance* instance in mapPtr.Value->Values)
         {
+            if (instance == null)
+            {
+                continue;
+            }
+
             var transform = instance->GetTransformImpl();
             var position = transform->Translation;
             if (position.Y <= -10f)
@@ -72,7 +76,9 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                 continue;
             }
 
-            var treasureRowId = Unsafe.Read<uint>((byte*)instance + 0x30);
+            // Treasure instances are GameObjectLayoutInstance values. Use the
+            // generated field instead of a version-sensitive raw +0x30 read.
+            var treasureRowId = ((GameObjectLayoutInstance*)instance)->BaseId;
             if (!Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>().TryGetRow(treasureRowId, out var treasureRow))
             {
                 continue;
@@ -105,8 +111,11 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     protected override unsafe bool IsPathfinderDataReady()
     {
-        var layout = LayoutWorld.Instance()->ActiveLayout;
-        return layout != null && layout->InstancesByType.TryGetValue(InstanceType.Treasure, out _, false);
+        var layoutWorld = LayoutWorld.Instance();
+        var layout = layoutWorld == null ? null : layoutWorld->ActiveLayout;
+        return layout != null &&
+               layout->InstancesByType.TryGetValue(InstanceType.Treasure, out var mapPtr, false) &&
+               mapPtr.Value != null;
     }
 
     protected override bool HasAvailablePathfinderNodes()
@@ -116,42 +125,44 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     protected override Func<Chain> GetInteractionChain(IGameObject obj)
     {
-        return () => Chain.Create()
-            .BreakIf(() => !GetValidObjects().Any(o => Vector3.Distance(o.Position, obj.Position) <= DISTANCE_TO_NODE_TO_USE))
-            .ConditionalThen(_ => Player.Mounted, _ => Actions.Unmount.Cast())
-            .Wait(500)
-            .Then(new TaskManagerTask(() =>
-            {
-                if (!EzThrottler.Throttle("ChestInteract", 250))
-                {
-                    return false;
-                }
+        var entityId = obj.EntityId;
+        var position = obj.Position;
+        var treasureType = new Treasure(obj).GetTreasureType();
 
-                if (!obj.IsValid() || !GetValidObjects().Any(o => Vector3.Distance(o.Position, obj.Position) <= DISTANCE_TO_NODE_TO_USE))
+        return () =>
+        {
+            var interactionSent = false;
+            return Chain.Create()
+                .BreakIf(() => !IsCurrentCofferNear(entityId, position))
+                .ConditionalThen(_ => Player.Mounted, _ => Actions.Unmount.Cast())
+                .Wait(500)
+                .Then(new TaskManagerTask(() =>
                 {
-                    return true;
-                }
-
-                if (Player.DistanceTo(obj) > DISTANCE_TO_NODE_TO_USE)
-                {
-                    return false;
-                }
-
-                unsafe
-                {
-                    Svc.Targets.Target = obj;
-                    var gameObject = (GameObject*)(void*)obj.Address;
-                    var instance = (FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure*)gameObject;
-                    TargetSystem.Instance()->InteractWithObject(gameObject);
-                    var opened = instance->Flags.HasFlag(FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags.Opened);
-                    if (opened)
+                    var current = GameObjectInteraction.Resolve(entityId);
+                    if (current == null || !current.IsTargetable || current.IsDead)
                     {
-                        module.Tracker.RecordAcquired(obj.EntityId, new Treasure(obj).GetTreasureType());
+                        if (interactionSent)
+                        {
+                            module.Tracker.RecordAcquired(entityId, treasureType);
+                        }
+
+                        return true;
                     }
 
-                    return opened;
-                }
-            }, new TaskManagerConfiguration { TimeLimitMS = 10000, ShowError = false }));
+                    if (!IsRandomCoffer(current) || Player.DistanceTo(current) > DISTANCE_TO_NODE_TO_USE)
+                    {
+                        return false;
+                    }
+
+                    if (!EzThrottler.Throttle("ChestInteract", 500))
+                    {
+                        return false;
+                    }
+
+                    interactionSent |= GameObjectInteraction.TryInteract(entityId, DISTANCE_TO_NODE_TO_USE, position);
+                    return false;
+                }, new TaskManagerConfiguration { TimeLimitMS = 10000, ShowError = false }));
+        };
     }
 
     protected override List<uint> GetValidNodes(int max)
@@ -180,6 +191,12 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     {
         return Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>().TryGetRow(obj.BaseId, out var row)
                && TreasureData.IsRandomCofferType(row.SGB.RowId);
+    }
+
+    private static bool IsCurrentCofferNear(ulong entityId, Vector3 expectedPosition)
+    {
+        var current = GameObjectInteraction.Resolve(entityId);
+        return current != null && IsRandomCoffer(current) && Vector3.Distance(current.Position, expectedPosition) <= 5f;
     }
 
     private sealed class EmptyTreasurePathfinder : IPathfinder

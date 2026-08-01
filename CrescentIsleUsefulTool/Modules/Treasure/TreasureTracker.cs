@@ -54,46 +54,12 @@ public class TreasureTracker : IDisposable
 
     public void Tick(Plugin plugin)
     {
-        var treasures = Svc.Objects
-            .Where(o => o is { ObjectKind: ObjectKind.Treasure })
-            .ToDictionary(o => (ulong)o.EntityId, o => o);
-
-        var knownIds = Treasures.Select(t => t.Id).ToHashSet();
-
-        // Removed
-        for (var i = Treasures.Count - 1; i >= 0; i--)
-        {
-            var treasure = Treasures[i];
-            if (!treasures.ContainsKey(treasure.Id) || !treasure.IsValid())
-            {
-                Treasures.RemoveAt(i);
-            }
-        }
-
-        // Added
-        foreach (var (objectId, obj) in treasures)
-        {
-            if (knownIds.Contains(objectId))
-            {
-                continue;
-            }
-
-            var treasure = new Treasure(obj);
-            if (treasure.IsValid())
-            {
-                Treasures.Add(treasure);
-            }
-        }
-
-        Treasures = Treasures.OrderBy(t => Player.DistanceTo(t.GetPosition())).ToList();
-
-        foreach (var treasure in Treasures)
-        {
-            if (treasure.CheckOpened())
-            {
-                RecordAcquired(treasure.Id, treasure.GetTreasureType());
-            }
-        }
+        Treasures = Svc.Objects
+            .Where(obj => obj is { ObjectKind: ObjectKind.Treasure, IsDead: false, IsTargetable: true })
+            .Where(obj => obj.IsValid())
+            .Select(obj => new Treasure(obj))
+            .OrderBy(treasure => Player.DistanceTo(treasure.Position))
+            .ToList();
     }
 
     public void RecordAcquired(ulong entityId, TreasureType treasureType)
@@ -134,8 +100,13 @@ public class TreasureTracker : IDisposable
             return;
         }
 
+        if (args.Addon.Address == nint.Zero)
+        {
+            return;
+        }
+
         var addon = (AtkUnitBase*)args.Addon.Address;
-        if (!addon->IsVisible)
+        if (addon == null || !addon->IsVisible)
         {
             return;
         }
@@ -148,8 +119,20 @@ public class TreasureTracker : IDisposable
 
         LastParseWideText = DateTime.Now;
 
+        var node = addon->GetNodeById(3);
+        if (node == null)
+        {
+            return;
+        }
+
+        var textNode = node->GetAsAtkTextNode();
+        if (textNode == null)
+        {
+            return;
+        }
+
         var pattern = LogMessageHelper.GetLogMessagePattern(10965);
-        var text = addon->GetNodeById(3)->GetAsAtkTextNode()->NodeText.ToString();
+        var text = textNode->NodeText.ToString();
         var match = Regex.Match(text, pattern);
 
         if (!match.Success)
@@ -157,8 +140,14 @@ public class TreasureTracker : IDisposable
             return;
         }
 
-        SilverChests = int.Parse(match.Groups[1].Value);
-        BronzeChests = int.Parse(match.Groups[2].Value);
+        if (!int.TryParse(match.Groups[1].Value, out var silver) ||
+            !int.TryParse(match.Groups[2].Value, out var bronze))
+        {
+            return;
+        }
+
+        SilverChests = silver;
+        BronzeChests = bronze;
         CountInitialised = true;
     }
 

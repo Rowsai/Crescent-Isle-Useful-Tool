@@ -6,13 +6,12 @@ using CrescentIsleUsefulTool.ActionHelpers;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
 using CrescentIsleUsefulTool.ItemHelpers;
+using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Pathfinding;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
-using FFXIVClientStructs.FFXIV.Client.Game.Control;
-using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Ocelot.Chain;
 using Ocelot.Chain.ChainEx;
 using ObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
@@ -42,10 +41,16 @@ public class CarrotHunt(CarrotsModule module) : Hunter(module)
         return new Pathfinder(module.PluginConfig.PathfinderConfig.ReturnCost, module.PluginConfig.PathfinderConfig.TeleportCost);
     }
 
-    protected override unsafe Func<Chain> GetInteractionChain(IGameObject obj)
+    protected override Func<Chain> GetInteractionChain(IGameObject obj)
     {
+        // IGameObject wrappers are only valid for the framework update in
+        // which they were obtained. Keep the scalar position in the delayed
+        // chain and resolve any interactable object again immediately before
+        // use.
+        var carrotPosition = obj.Position;
+
         return () => Chain.Create()
-            .BreakIf(() => !GetValidObjects().Any(o => Vector3.Distance(o.Position, obj.Position) <= DISTANCE_TO_NODE_TO_USE))
+            .BreakIf(() => !GetValidObjects().Any(o => Vector3.Distance(o.Position, carrotPosition) <= DISTANCE_TO_NODE_TO_USE))
             .ConditionalThen(_ => Player.Mounted, _ => Actions.Unmount.Cast())
             .Wait(500)
             .BreakIf(() => Items.FortuneCarrot.Count() <= 0)
@@ -60,10 +65,7 @@ public class CarrotHunt(CarrotsModule module) : Hunter(module)
                     return true;
                 }
 
-                Svc.Targets.Target = chest;
-
-                var gameObject = (GameObject*)(void*)chest.Address;
-                TargetSystem.Instance()->InteractWithObject(gameObject);
+                GameObjectInteraction.TryInteract(chest.EntityId, DISTANCE_TO_NODE_TO_USE + 1f, chest.Position);
                 return Svc.Objects.LocalPlayer?.IsCasting == true;
             })
             .WaitToCast();
@@ -84,7 +86,7 @@ public class CarrotHunt(CarrotsModule module) : Hunter(module)
 
         stepIndex = 0;
         Steps.Clear();
-        vnav.Stop();
+        VnavmeshIpc.TryStop(vnav);
         Plugin.Chain.Abort();
         StepProcessor.Abort();
         pathfinder = null;

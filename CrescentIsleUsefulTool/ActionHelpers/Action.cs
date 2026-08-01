@@ -8,8 +8,14 @@ public unsafe class Action(ActionType type, uint id)
 {
     public float GetRecastTime()
     {
-        var recast = ActionManager.Instance()->GetRecastTime(type, id);
-        var elapsed = ActionManager.Instance()->GetRecastTimeElapsed(type, id);
+        var manager = ActionManager.Instance();
+        if (manager == null)
+        {
+            return float.MaxValue;
+        }
+
+        var recast = manager->GetRecastTime(type, id);
+        var elapsed = manager->GetRecastTimeElapsed(type, id);
 
         return recast - elapsed;
     }
@@ -21,12 +27,20 @@ public unsafe class Action(ActionType type, uint id)
 
     public void Cast()
     {
-        ActionManager.Instance()->UseAction(type, id);
+        var manager = ActionManager.Instance();
+        if (manager != null)
+        {
+            manager->UseAction(type, id);
+        }
     }
 
     public void Cast(uint arg)
     {
-        ActionManager.Instance()->UseAction(type, id, arg);
+        var manager = ActionManager.Instance();
+        if (manager != null)
+        {
+            manager->UseAction(type, id, arg);
+        }
     }
 
     public Func<Chain> GetCastChain()

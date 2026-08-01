@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using CrescentIsleUsefulTool.Ipc;
 using ECommons.Automation.NeoTaskManager;
 using Ocelot.Chain;
 using Ocelot.Chain.ChainEx;
@@ -32,7 +33,10 @@ public class PathfindAndMoveToChain : ChainFactory
         var offsetZ = MathF.Sin(angle) * distance;
 
         destination = new Vector3(destination.X + offsetX, destination.Y, destination.Z + offsetZ);
-        destination = vnav.FindPointOnFloor(destination, false, 0.5f) ?? destination;
+        if (VnavmeshIpc.TryFindPointOnFloor(vnav, destination, false, 0.5f, out var floorPoint))
+        {
+            destination = floorPoint ?? destination;
+        }
 
         return new PathfindAndMoveToChain(vnav, destination);
     }

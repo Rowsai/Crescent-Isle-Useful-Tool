@@ -37,7 +37,12 @@ public class Prowler
 
     public static bool IsRunning
     {
-        get => Instance.Chain.IsRunning || Instance.Vnavmesh.IsRunning() || Instance.Vnavmesh.IsPathfinding();
+        get
+        {
+            VNavmeshSafe.TryIsRunning(Instance.Vnavmesh, out var running);
+            VNavmeshSafe.TryIsPathfinding(Instance.Vnavmesh, out var pathfinding);
+            return Instance.Chain.IsRunning || running || pathfinding;
+        }
     }
 
     private Prowler(OcelotPlugin plugin)
@@ -61,7 +66,7 @@ public class Prowler
 
     public static void Abort()
     {
-        Instance.Vnavmesh.Stop();
+        VNavmeshSafe.TryStop(Instance.Vnavmesh);
         Instance.Chain.Abort();
     }
 }

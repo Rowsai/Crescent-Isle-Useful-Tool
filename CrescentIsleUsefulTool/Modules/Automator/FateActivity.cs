@@ -11,7 +11,6 @@ using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using ECommons.Throttlers;
-using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Ocelot.IPC;
 
 namespace CrescentIsleUsefulTool.Modules.Automator;
@@ -42,8 +41,10 @@ public class FateActivity(EventData data, Lifestream lifestream, VNavmesh vnav, 
             {
                 if (Vector3.Distance(target.Position, lastTargetPos) > 5f)
                 {
-                    vnav.PathfindAndMoveTo(target.Position, false);
-                    lastTargetPos = target.Position;
+                    if (VnavmeshIpc.TryPathfindAndMoveTo(vnav, target.Position, false))
+                    {
+                        lastTargetPos = target.Position;
+                    }
                 }
 
                 if (states.GetState() == State.InFate)
@@ -60,7 +61,7 @@ public class FateActivity(EventData data, Lifestream lifestream, VNavmesh vnav, 
                 }
             }
 
-            if (!vnav.IsRunning())
+            if (!VnavmeshIpc.TryIsRunning(vnav, out var isRunning) || !isRunning)
             {
                 throw new VnavmeshStoppedException();
             }
@@ -76,7 +77,7 @@ public class FateActivity(EventData data, Lifestream lifestream, VNavmesh vnav, 
 
     public override bool IsValid()
     {
-        return Svc.Fates.Any(f => f.FateId == fate.Id);
+        return module.GetModule<FatesModule>().fates.ContainsKey(fate.Id);
     }
 
     protected override Vector3 GetPosition()
@@ -89,19 +90,9 @@ public class FateActivity(EventData data, Lifestream lifestream, VNavmesh vnav, 
         return fate.Name;
     }
 
-    protected override unsafe bool IsActivityTarget(IBattleNpc obj)
+    protected override bool IsActivityTarget(IBattleNpc obj)
     {
-        try
-        {
-            var battleChara = (BattleChara*)obj.Address;
-
-            return battleChara->FateId == data.Id;
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Error(ex.Message);
-            return false;
-        }
+        return obj.IsValid() && Vector3.Distance(obj.Position, fate.StartPosition) <= fate.Radius + 15f;
     }
 
     protected override ActivityState GetPostPathfindingState()

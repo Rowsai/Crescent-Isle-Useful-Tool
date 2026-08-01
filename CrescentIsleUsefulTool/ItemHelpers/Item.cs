@@ -7,25 +7,16 @@ public unsafe class Item(uint id)
 {
     public int Count()
     {
-        try
-        {
-            return InventoryManager.Instance()->GetInventoryItemCount(id);
-        }
-        catch
-        {
-            return 0;
-        }
+        var manager = InventoryManager.Instance();
+        return manager == null ? 0 : manager->GetInventoryItemCount(id);
     }
 
     public void Use()
     {
-        try
+        var agent = AgentInventoryContext.Instance();
+        if (agent != null)
         {
-            AgentInventoryContext.Instance()->UseItem(id);
-        }
-        catch
-        {
-            // ignored
+            agent->UseItem(id);
         }
     }
 }

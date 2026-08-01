@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
+using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules.CriticalEncounters;
 using CrescentIsleUsefulTool.Modules.Fates;
 using ECommons.DalamudServices;
@@ -50,7 +51,7 @@ public class TeleportCommand(Plugin plugin) : OcelotCommand
         }
 
         var lifestream = plugin.IPC.GetSubscriber<Lifestream>();
-        if (!lifestream.IsReady() || lifestream.IsBusy())
+        if (!LifestreamIpc.TryIsBusy(lifestream, out var isBusy) || isBusy)
         {
             Svc.Chat.Print("Lifestreamが処理中です。");
             return;
@@ -137,7 +138,7 @@ public class TeleportCommand(Plugin plugin) : OcelotCommand
             }
 
             var data = EventData.GetCriticalEncounter(encounter.DynamicEventId);
-            return data.Aethernet ?? ZoneData.GetClosestAethernetShard(data.StartPosition ?? encounter.MapMarker.Position);
+            return data.Aethernet ?? ZoneData.GetClosestAethernetShard(data.StartPosition ?? encounter.Position);
         }
 
         return null;

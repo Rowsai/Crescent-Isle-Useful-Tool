@@ -60,8 +60,13 @@ public class TeleporterModule : Module
             return;
         }
 
+        if (args.Addon.Address == nint.Zero)
+        {
+            return;
+        }
+
         var addon = (AtkUnitBase*)args.Addon.Address;
-        if (!addon->IsVisible)
+        if (addon == null || !addon->IsVisible || addon->AtkValues == null || addon->AtkValuesCount <= 7)
         {
             return;
         }

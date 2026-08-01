@@ -6,6 +6,7 @@ using Ocelot;
 using Ocelot.IPC;
 using Ocelot.Modules;
 using Ocelot.Windows;
+using CrescentIsleUsefulTool.Enums;
 
 namespace CrescentIsleUsefulTool.Modules.Automator;
 
@@ -109,5 +110,39 @@ public class AutomatorModule : Module
         }
 
         PluginConfig.Save();
+    }
+
+    public void SetCriticalEncounterTravelEnabled(bool enabled)
+    {
+        Config.DoCriticalEncounters = enabled;
+        if (!enabled && automator.Activity?.data.Type == EventType.CriticalEncounter)
+        {
+            StopCurrentActivity();
+        }
+
+        PluginConfig.Save();
+    }
+
+    public void SetFateTravelEnabled(bool enabled)
+    {
+        Config.DoFates = enabled;
+        if (!enabled && automator.Activity?.data.Type == EventType.Fate)
+        {
+            StopCurrentActivity();
+        }
+
+        PluginConfig.Save();
+    }
+
+    private void StopCurrentActivity()
+    {
+        automator.Refresh();
+        TryGetIPCSubscriber<VNavmesh>(out var vnav);
+        VnavmeshIpc.TryStop(vnav);
+        Plugin.Chain.Abort();
+        if (Config.ShouldToggleAiProvider)
+        {
+            Config.AiProvider.Off();
+        }
     }
 }

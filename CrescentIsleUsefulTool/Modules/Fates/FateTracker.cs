@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using ECommons.DalamudServices;
 using Ocelot.Modules;
 
@@ -17,16 +18,29 @@ public class FateTracker
 
     public void Update(UpdateContext context)
     {
-        var currentFates = Svc.Fates.ToDictionary(f => (uint)f.FateId, f => f);
-
-        foreach (var (id, data) in currentFates)
+        // Copy only scalar values while IFate belongs to the current framework
+        // update. Never store the live IFate wrapper in a long-lived object.
+        var currentFates = new Dictionary<uint, FateSnapshot>();
+        foreach (var current in Svc.Fates)
         {
-            if (Fates.ContainsKey(id))
+            var id = (uint)current.FateId;
+            if (id == 0)
             {
                 continue;
             }
 
-            var fate = new Fate(data);
+            currentFates[id] = new FateSnapshot(current.Progress, current.Radius, current.Position);
+        }
+
+        foreach (var (id, snapshot) in currentFates)
+        {
+            if (Fates.TryGetValue(id, out var existing))
+            {
+                existing.Refresh(snapshot.Progress, snapshot.Radius, snapshot.Position);
+                continue;
+            }
+
+            var fate = new Fate(id, snapshot.Progress, snapshot.Radius, snapshot.Position);
             OnFateSpawned?.Invoke(fate);
             Fates[id] = fate;
         }
@@ -38,9 +52,7 @@ public class FateTracker
             Fates.Remove(id);
         }
 
-        foreach (var fate in Fates.Values)
-        {
-            fate.Update(context);
-        }
     }
+
+    private readonly record struct FateSnapshot(byte Progress, float Radius, Vector3 Position);
 }

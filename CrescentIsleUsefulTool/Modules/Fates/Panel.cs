@@ -28,17 +28,9 @@ public class Panel
                     return;
                 }
 
-                try
-                {
                 ImGui.TextUnformatted(fate.Name);
                 ImGui.SameLine();
                 ImGui.TextColored(CrescentTheme.AccentSoft, $"{fate.CurrentProgress}%");
-                }
-                catch (AccessViolationException)
-                {
-                    continue;
-                }
-
 
                 var estimate = fate.Progress.EstimateTimeToCompletion();
                 if (estimate != null)

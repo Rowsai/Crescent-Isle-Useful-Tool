@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
 using ECommons.DalamudServices;
-using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using FFXIVClientStructs.FFXIV.Client.UI;
 
 namespace CrescentIsleUsefulTool.Modules.CriticalEncounters;
@@ -43,7 +42,7 @@ public class Alerter : IDisposable
         this.module.Tracker.OnInactiveState += OnCriticalEncounterDepawned;
     }
 
-    private void OnCriticalEncounterSpawned(DynamicEvent ev)
+    private void OnCriticalEncounterSpawned(CriticalEncounterSnapshot ev)
     {
         if (module.Config.LogSpawn)
         {
@@ -58,7 +57,7 @@ public class Alerter : IDisposable
         unsafe { UIGlobals.PlaySoundEffect(66); }
     }
 
-    private void OnCriticalEncounterDepawned(DynamicEvent ev)
+    private void OnCriticalEncounterDepawned(CriticalEncounterSnapshot ev)
     {
         if (module.Config.LogSpawn)
         {
@@ -73,7 +72,7 @@ public class Alerter : IDisposable
         unsafe { UIGlobals.PlaySoundEffect(68); }
     }
 
-    private bool ShouldAlertForCriticalEncounter(DynamicEvent ev)
+    private bool ShouldAlertForCriticalEncounter(CriticalEncounterSnapshot ev)
     {
         if (module.Config.AlertAll)
         {

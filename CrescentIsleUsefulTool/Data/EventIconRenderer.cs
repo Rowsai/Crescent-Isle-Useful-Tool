@@ -49,7 +49,8 @@ public struct EventIconRenderer
     {
         var itemData = Svc.Data.GetExcelSheet<Item>().GetRow((uint)data.Demiatma!);
 
-        var count = InventoryManager.Instance()->GetInventoryItemCount(itemData.RowId);
+        var inventory = InventoryManager.Instance();
+        var count = inventory == null ? 0 : inventory->GetInventoryItemCount(itemData.RowId);
         var needed = Math.Max(0, 3 - count);
 
         var border = needed > 0 ? new Vector4(0.3f, 0.85f, 0.39f, 1f) : new Vector4(0.95f, 0.26f, 0.21f, 1f);

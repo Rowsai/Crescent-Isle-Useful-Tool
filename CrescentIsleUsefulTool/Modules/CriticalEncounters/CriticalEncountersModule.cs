@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using CrescentIsleUsefulTool.Data;
-using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using Ocelot.Modules;
 using Ocelot.Windows;
 
@@ -26,7 +25,7 @@ public class CriticalEncountersModule : Module
 
     public readonly CriticalEncounterTracker Tracker;
 
-    public Dictionary<uint, DynamicEvent> CriticalEncounters
+    public Dictionary<uint, CriticalEncounterSnapshot> CriticalEncounters
     {
         get => Tracker.CriticalEncounters;
     }
@@ -60,7 +59,7 @@ public class CriticalEncountersModule : Module
 
     public override void OnTerritoryChanged(uint id)
     {
-        CriticalEncounters.Clear();
+        Tracker.Reset();
     }
 
     public override void Dispose()

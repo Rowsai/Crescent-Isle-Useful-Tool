@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Game.ClientState.Conditions;
@@ -28,7 +29,11 @@ public class Prowl(Vector3 destination, IGameObject? obj = null)
         set => FinalDestination = value;
     }
 
-    public IGameObject? GameObject { get; private set; } = obj;
+    private ulong? gameObjectEntityId = obj?.EntityId;
+
+    public IGameObject? GameObject => gameObjectEntityId.HasValue
+        ? Svc.Objects.FirstOrDefault(candidate => candidate.EntityId == gameObjectEntityId.Value)
+        : null;
 
     public readonly Vector3 OriginalStart = Player.Position;
 
@@ -73,7 +78,7 @@ public class Prowl(Vector3 destination, IGameObject? obj = null)
 
     private Task<List<Vector3>>? pathfindingTask = null;
 
-    private Task? trackingTask = null;
+    private Task<List<Vector3>>? trackingTask = null;
 
     public float EuclideanDistance
     {
@@ -98,22 +103,22 @@ public class Prowl(Vector3 destination, IGameObject? obj = null)
     public Prowl(IGameObject gameObject)
         : this(gameObject.Position)
     {
-        GameObject = gameObject;
+        gameObjectEntityId = gameObject.EntityId;
     }
 
     public Func<Chain.Chain> GetChain(VNavmesh vnavmesh)
     {
         return () => Chain.Chain.Create($"Prowl({Start:f2}, {Destination:f2})")
             .Debug("Waiting for vnavmesh not to be running")
-            .Then(_ => !vnavmesh.IsRunning())
+            .Then(_ => VNavmeshSafe.TryIsRunning(vnavmesh, out var running) && !running)
             .Debug("Running preprocessor")
             .Then(_ => PreProcessor.Invoke(this))
             .Debug("Starting pathfinding task")
-            .Then(_ => pathfindingTask = vnavmesh.Pathfind(Start, Destination, ShouldFly(this)))
+            .Then(_ => VNavmeshSafe.TryPathfind(vnavmesh, Start, Destination, ShouldFly(this), out pathfindingTask))
             .Then(_ => State = ProwlState.Pathfinding)
             .BreakIf(() => pathfindingTask == null)
             .Debug("Waiting for pathfinding to be done")
-            .Then(_ => !vnavmesh.IsRunning() && pathfindingTask!.IsCompleted)
+            .Then(_ => VNavmeshSafe.TryIsRunning(vnavmesh, out var running) && !running && pathfindingTask!.IsCompleted)
             .Then(_ =>
             {
                 if (pathfindingTask!.IsCanceled)
@@ -164,16 +169,17 @@ public class Prowl(Vector3 destination, IGameObject? obj = null)
             })
             .ConditionalThen(_ => !ShouldFly(this) && ShouldSprint(this) && Actions.Sprint.CanCast() && !Player.Mounted, _ => Actions.Sprint.Cast())
             .Debug("Following Path")
-            .Then(_ => vnavmesh.MoveTo(Nodes, ShouldFly(this)))
+            .Then(_ => VNavmeshSafe.TryMoveTo(vnavmesh, Nodes, ShouldFly(this)))
             .Then(_ => State = ProwlState.Moving)
             .Then(_ =>
             {
-                if (!vnavmesh.IsRunning() || Watcher.Invoke(this))
+                if (!VNavmeshSafe.TryIsRunning(vnavmesh, out var running) || !running || Watcher.Invoke(this))
                 {
                     return true;
                 }
 
-                if (GameObject == null)
+                var gameObject = GameObject;
+                if (gameObject == null)
                 {
                     return false;
                 }
@@ -185,26 +191,28 @@ public class Prowl(Vector3 destination, IGameObject? obj = null)
 
                 if (trackingTask is { IsCompleted: true })
                 {
+                    if (trackingTask.IsCompletedSuccessfully)
+                    {
+                        var nodes = trackingTask.Result.Smooth().ContinueFrom(Player.Position);
+                        VNavmeshSafe.TryStop(vnavmesh);
+                        VNavmeshSafe.TryMoveTo(vnavmesh, nodes, false);
+                    }
+
                     trackingTask.Dispose();
                     trackingTask = null;
                 }
 
-                if (GameObject.Position.DistanceTo2D(Destination) <= GameObject.HitboxRadius)
+                if (gameObject.Position.DistanceTo2D(Destination) <= gameObject.HitboxRadius)
                 {
                     return false;
                 }
 
-                trackingTask = Task.Run(async () =>
-                {
-                    var nodes = await vnavmesh.Pathfind(Player.Position, GameObject.GetPointOnHitboxFromPlayer(2f), false);
-                    nodes = nodes.Smooth().ContinueFrom(Player.Position);
-                    vnavmesh.Stop();
-                    vnavmesh.MoveTo(nodes, false);
-                });
+                var trackingDestination = gameObject.GetPointOnHitboxFromPlayer(2f);
+                VNavmeshSafe.TryPathfind(vnavmesh, Player.Position, trackingDestination, false, out trackingTask);
 
                 return false;
             })
-            .Then(_ => vnavmesh.Stop())
+            .Then(_ => VNavmeshSafe.TryStop(vnavmesh))
             .Then(_ =>
             {
                 OnComplete.Invoke(this, vnavmesh);
@@ -236,7 +244,7 @@ public class Prowl(Vector3 destination, IGameObject? obj = null)
         OriginalDestination = destination;
         Destination = destination;
         Start = Player.Position;
-        GameObject = obj;
+        gameObjectEntityId = obj?.EntityId;
 
         Prowler.Prowl(this);
     }

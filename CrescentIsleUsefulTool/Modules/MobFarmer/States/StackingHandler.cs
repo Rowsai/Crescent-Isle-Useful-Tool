@@ -1,4 +1,5 @@
 using System.Linq;
+using CrescentIsleUsefulTool.Ipc;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using Ocelot.IPC;
@@ -21,20 +22,23 @@ public class StackingHandler(MobFarmerModule module) : FarmerPhaseHandler(module
     {
         var vnav = Module.GetIPCSubscriber<VNavmesh>();
 
-        if (HasRunStack && !vnav.IsRunning())
+        VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+        if (HasRunStack && !isRunning)
         {
             HasRunStack = false;
             Module.Farmer.RotationPlugin.PhantomJobOn();
             return FarmerPhase.Fighting;
         }
 
-        var furthest = Module.Scanner.InCombat.Where(o => o.Address != Svc.Targets.Target?.Address).OrderBy(Player.DistanceTo).LastOrDefault();
-        if (furthest == null)
+        var targetId = Svc.Targets.Target?.EntityId;
+        var candidates = Module.Scanner.InCombat.Where(mob => mob.EntityId != targetId).ToArray();
+        if (candidates.Length == 0)
         {
             return FarmerPhase.Fighting;
         }
 
-        vnav.PathfindAndMoveTo(furthest.Position, false);
+        var furthest = candidates.OrderBy(mob => Player.DistanceTo(mob.Position)).Last();
+        VnavmeshIpc.TryPathfindAndMoveTo(vnav, furthest.Position, false);
         HasRunStack = true;
 
         return null;

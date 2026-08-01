@@ -25,7 +25,13 @@ public class Job
     {
         get
         {
-            var id = (JobId)PublicContentOccultCrescent.GetState()->CurrentSupportJob;
+            var state = PublicContentOccultCrescent.GetState();
+            if (state == null)
+            {
+                return Freelancer;
+            }
+
+            var id = (JobId)state->CurrentSupportJob;
             return id switch
             {
                 JobId.Freelancer => Freelancer,
@@ -55,9 +61,12 @@ public class Job
         this.status = status;
     }
 
-    public void ChangeTo()
+    public unsafe void ChangeTo()
     {
-        PublicContentOccultCrescent.ChangeSupportJob(ByteId);
+        if (PublicContentOccultCrescent.GetState() != null)
+        {
+            PublicContentOccultCrescent.ChangeSupportJob(ByteId);
+        }
     }
 
     public Chain ChangeToChain()

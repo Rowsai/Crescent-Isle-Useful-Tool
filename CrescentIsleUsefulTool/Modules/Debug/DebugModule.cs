@@ -23,9 +23,6 @@ public class DebugModule(Plugin plugin, Config config) : Module(plugin, config)
         new StatusPanel(),
         new TargetPanel(),
         new ActivityTargetPanel(),
-        new TreasureHuntPanel(),
-        new CarrotHuntPanel(),
-        new JobLevelPanel(),
     ];
 
     private int selectedPanelIndex = 0;

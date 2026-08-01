@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Plugin.Ipc.Exceptions;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
@@ -151,6 +153,77 @@ public static class VnavmeshIpc
         catch (Exception ex)
         {
             Svc.Log.Warning(ex, "Failed to start vnavmesh pathfinding.");
+            return false;
+        }
+    }
+
+    public static bool TryPathfind(VNavmesh? vnav, Vector3 start, Vector3 destination, bool fly, out Task<List<Vector3>>? task)
+    {
+        task = null;
+        if (!IsOperational(vnav, out _))
+        {
+            return false;
+        }
+
+        try
+        {
+            task = vnav!.Pathfind(start, destination, fly);
+            return true;
+        }
+        catch (IpcNotReadyError)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning(ex, "Failed to request a vnavmesh path.");
+            return false;
+        }
+    }
+
+    public static bool TryFollowPath(VNavmesh? vnav, List<Vector3> path, bool fly)
+    {
+        if (!IsOperational(vnav, out _))
+        {
+            return false;
+        }
+
+        try
+        {
+            vnav!.FollowPath(path, fly);
+            return true;
+        }
+        catch (IpcNotReadyError)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning(ex, "Failed to ask vnavmesh to follow a path.");
+            return false;
+        }
+    }
+
+    public static bool TryFindPointOnFloor(VNavmesh? vnav, Vector3 position, bool allowUnlandable, float halfExtent, out Vector3? point)
+    {
+        point = null;
+        if (!IsOperational(vnav, out _))
+        {
+            return false;
+        }
+
+        try
+        {
+            point = vnav!.FindPointOnFloor(position, allowUnlandable, halfExtent);
+            return true;
+        }
+        catch (IpcNotReadyError)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning(ex, "Failed to query a vnavmesh floor point.");
             return false;
         }
     }

@@ -41,6 +41,11 @@ public class ActivityFlagCommand(Plugin plugin) : OcelotCommand
     public override unsafe void Execute(string command, string arguments)
     {
         var map = AgentMap.Instance();
+        if (map == null)
+        {
+            return;
+        }
+
         map->FlagMarkerCount = 0;
 
         switch (arguments)
@@ -65,7 +70,7 @@ public class ActivityFlagCommand(Plugin plugin) : OcelotCommand
                 continue;
             }
 
-            map->SetFlagMapMarker(Svc.ClientState.TerritoryType, Svc.ClientState.MapId, encounter.MapMarker.Position);
+            map->SetFlagMapMarker(Svc.ClientState.TerritoryType, Svc.ClientState.MapId, encounter.Position);
             return;
         }
     }

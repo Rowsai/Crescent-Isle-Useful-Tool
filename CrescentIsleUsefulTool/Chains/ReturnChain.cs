@@ -22,8 +22,11 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 {
     private bool complete = false;
 
+    private bool performedDemiReturn = false;
+
     protected override Chain Create(Chain chain)
     {
+        performedDemiReturn = false;
         chain.BreakIf(() => Player.IsDead);
 
         var vnav = module.GetIPCSubscriber<VNavmesh>();
@@ -49,10 +52,10 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         );
 
         chain.Then(ChainHelper.TreasureSightChain(config.UpdateTreasureCount));
-        if (config.ApplyBuffs)
-        {
-            chain.Then(ApplyBuffs);
-        }
+        // Every successful Demi-Déjion performs the Inquiring Mind check.
+        // ApplyBuffs remains useful for callers already at camp, but can no
+        // longer suppress this post-return safety check.
+        chain.ConditionalThen(_ => config.ApplyBuffs || performedDemiReturn, ApplyBuffs);
 
         if (config.ApproachAetheryte)
         {
@@ -60,7 +63,10 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
             var position = GetAetherytePosition();
 
             chain.Then(new PathfindAndMoveToChain(vnav, GetAetherytePosition()));
-            chain.Then(_ => lifestream.GetActiveCustomAetheryte() != 0 && Player.DistanceTo(position) <= AethernetData.DISTANCE);
+            chain.Then(_ =>
+                LifestreamIpc.TryGetActiveCustomAetheryte(lifestream, out var active) &&
+                active != 0 &&
+                Player.DistanceTo(position) <= AethernetData.DISTANCE);
             chain.Then(_ => { VnavmeshIpc.TryStop(vnav); });
         }
 
@@ -82,7 +88,9 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         }
 
         chain = Actions.Return.CastOnChain(chain);
-        chain.WaitToCast().WaitToCycleCondition(ConditionFlag.BetweenAreas);
+        chain.WaitToCast()
+            .WaitToCycleCondition(ConditionFlag.BetweenAreas)
+            .Then(_ => performedDemiReturn = true);
         return chain;
     }
 
@@ -96,18 +104,40 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
     {
         var vnav = module.GetIPCSubscriber<VNavmesh>();
         var buffs = module.GetModule<BuffModule>();
+        var crystalPosition = Vector3.Zero;
 
-        var closestKnowledgeCrystal = ZoneData.GetNearbyKnowledgeCrystal(60f).FirstOrDefault();
+        var chain = Chain.Create("Return.InquiringMindCheck");
+        chain.RunIf(buffs.ShouldRefreshBuffs);
+        chain.Then(new TaskManagerTask(() =>
+        {
+            if (!VnavmeshIpc.IsOperational(vnav, out _))
+            {
+                return false;
+            }
 
-        var chain = Chain.Create();
-        chain.BreakIf(() => !buffs.ShouldRefreshBuffs() || !vnav.IsReady() || closestKnowledgeCrystal == null);
+            // The object table can take several frames to repopulate after
+            // Demi-Déjion. Wait for a fresh object instead of checking once
+            // and silently skipping the buff sequence.
+            var crystal = ZoneData.GetNearbyKnowledgeCrystal(60f).FirstOrDefault();
+            if (crystal == null)
+            {
+                return false;
+            }
+
+            crystalPosition = crystal.Position;
+            return true;
+        }, new TaskManagerConfiguration { TimeLimitMS = 15000, ShowError = false }));
         chain.Then(_ => Actions.TryUnmount());
 
-        chain.PathfindAndMoveTo(vnav, closestKnowledgeCrystal!.Position);
-        chain.WaitUntilNear(vnav, closestKnowledgeCrystal!.Position, AethernetData.DISTANCE);
-        chain.Then(_ => { VnavmeshIpc.TryStop(vnav); });
+        chain.Then(() => Chain.Create("Return.ApproachKnowledgeCrystal")
+            .Then(new PathfindAndMoveToChain(vnav, crystalPosition))
+            .WaitUntilNear(vnav, crystalPosition, AethernetData.DISTANCE)
+            .Then(_ => { VnavmeshIpc.TryStop(vnav); }));
 
         chain.Then(new AllBuffsChain(buffs));
+        chain.Then(new TaskManagerTask(
+            () => !buffs.ShouldRefreshBuffs(),
+            new TaskManagerConfiguration { TimeLimitMS = 15000, ShowError = false }));
 
         return chain;
     }

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
+using CrescentIsleUsefulTool.Ipc;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using ECommons.Throttlers;
@@ -24,12 +25,12 @@ public class GatheringHandler(MobFarmerModule module) : FarmerPhaseHandler(modul
     {
         var vnav = Module.GetIPCSubscriber<VNavmesh>();
 
-        var InCombat = Module.Scanner.InCombat;
-        var NotInCombat = Module.Scanner.NotInCombat.ToArray();
+        var inCombat = Module.Scanner.InCombat.ToArray();
+        var notInCombat = Module.Scanner.NotInCombat.ToArray();
 
-        if (InCombat.Count() >= Module.Config.MinimumMobsToStartFight || !NotInCombat.Any())
+        if (inCombat.Length >= Module.Config.MinimumMobsToStartFight || notInCombat.Length == 0)
         {
-            vnav.Stop();
+            VnavmeshIpc.TryStop(vnav);
             ChainQueue.Abort();
             return FarmerPhase.Stacking;
         }
@@ -40,7 +41,8 @@ public class GatheringHandler(MobFarmerModule module) : FarmerPhaseHandler(modul
             ChainQueue.Abort();
         }
 
-        Svc.Targets.Target = NotInCombat.First();
+        var targetSnapshot = notInCombat.First();
+        Svc.Targets.Target = Module.Scanner.Resolve(targetSnapshot);
 
         if (ChainQueue.IsRunning || Svc.Targets.Target == null)
         {
@@ -48,7 +50,7 @@ public class GatheringHandler(MobFarmerModule module) : FarmerPhaseHandler(modul
         }
 
         var target = Svc.Targets.Target;
-        if (!target.IsTargetingPlayer() && !EzThrottler.Throttle("Repath", 500))
+        if (target == null || (!target.IsTargetingPlayer() && !EzThrottler.Throttle("Repath", 500)))
         {
             return null;
         }
@@ -57,12 +59,12 @@ public class GatheringHandler(MobFarmerModule module) : FarmerPhaseHandler(modul
         List<Vector3> path = [];
         ChainQueue.Submit(() =>
             Chain.Create()
-                .Then(_ => task = vnav.Pathfind(Player.Position, target.Position, false))
+                .Then(_ => VnavmeshIpc.TryPathfind(vnav, Player.Position, targetSnapshot.Position, false, out task))
                 .Then(_ => task!.IsCompleted)
                 .Then(_ => path = task!.Result)
                 .BreakIf(() => path.Count <= 1)
                 .Then(_ => path.RemoveAt(0))
-                .Then(_ => vnav.FollowPath(path, false))
+                .Then(_ => VnavmeshIpc.TryFollowPath(vnav, path, false))
         );
 
         return null;

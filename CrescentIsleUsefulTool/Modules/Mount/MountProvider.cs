@@ -9,7 +9,8 @@ public class MountProvider : ExcelSheetItemProvider<ExcelMount>
 {
     public override unsafe bool Filter(ExcelMount item)
     {
-        return PlayerState.Instance()->IsMountUnlocked(item.RowId);
+        var playerState = PlayerState.Instance();
+        return playerState != null && playerState->IsMountUnlocked(item.RowId);
     }
 
     public override string GetLabel(ExcelMount item)

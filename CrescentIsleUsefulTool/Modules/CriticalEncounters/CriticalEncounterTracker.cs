@@ -10,7 +10,7 @@ namespace CrescentIsleUsefulTool.Modules.CriticalEncounters;
 
 public class CriticalEncounterTracker
 {
-    public Dictionary<uint, DynamicEvent> CriticalEncounters = new();
+    public Dictionary<uint, CriticalEncounterSnapshot> CriticalEncounters { get; private set; } = new();
 
     public Dictionary<uint, EventProgress> Progress { get; } = new();
 
@@ -24,20 +24,45 @@ public class CriticalEncounterTracker
         TowerTimer = new TowerTimer(this, module.GetModule<FatesModule>());
     }
 
-    public event Action<DynamicEvent>? OnInactiveState;
+    public event Action<CriticalEncounterSnapshot>? OnInactiveState;
 
-    public event Action<DynamicEvent>? OnRegisterState;
+    public event Action<CriticalEncounterSnapshot>? OnRegisterState;
 
-    public event Action<DynamicEvent>? OnWarmupState;
+    public event Action<CriticalEncounterSnapshot>? OnWarmupState;
 
-    public event Action<DynamicEvent>? OnBattleState;
+    public event Action<CriticalEncounterSnapshot>? OnBattleState;
 
 
     public unsafe void Tick(IFramework _)
     {
-        CriticalEncounters = PublicContentOccultCrescent.GetInstance()->DynamicEventContainer.Events
-            .ToArray()
-            .ToDictionary(ev => (uint)ev.DynamicEventId, ev => ev);
+        var content = PublicContentOccultCrescent.GetInstance();
+        if (content == null || !ZoneData.IsInOccultCrescent())
+        {
+            Reset();
+            return;
+        }
+
+        var snapshots = new Dictionary<uint, CriticalEncounterSnapshot>();
+        foreach (var ev in content->DynamicEventContainer.Events.ToArray())
+        {
+            var id = (uint)ev.DynamicEventId;
+            if (id == 0)
+            {
+                continue;
+            }
+
+            var data = EventData.GetCriticalEncounter(id);
+            snapshots[id] = new CriticalEncounterSnapshot(
+                id,
+                ev.State,
+                (byte)ev.Progress,
+                (uint)ev.EventType,
+                (uint)ev.StartTimestamp,
+                ev.MapMarker.Position,
+                data.InternalName);
+        }
+
+        CriticalEncounters = snapshots;
 
         foreach (var ev in CriticalEncounters.Values)
         {
@@ -53,15 +78,15 @@ public class CriticalEncounterTracker
                     continue;
                 }
 
-                if (!Progress.TryGetValue(ev.DynamicEventId, out var current))
+                if (!Progress.TryGetValue(ev.DynamicEventId, out var progress))
                 {
-                    current = new EventProgress();
-                    Progress[ev.DynamicEventId] = current;
+                    progress = new EventProgress();
+                    Progress[ev.DynamicEventId] = progress;
                 }
 
-                if (current.samples.Count == 0 || current.samples[^1].Progress != ev.Progress)
+                if (progress.samples.Count == 0 || progress.samples[^1].Progress != ev.Progress)
                 {
-                    current.Add(ev.Progress);
+                    progress.Add(ev.Progress);
                 }
 
                 if (ev.Progress == 100)
@@ -100,5 +125,18 @@ public class CriticalEncounterTracker
                     break;
             }
         }
+
+        foreach (var staleId in lastStates.Keys.Except(CriticalEncounters.Keys).ToArray())
+        {
+            lastStates.Remove(staleId);
+            Progress.Remove(staleId);
+        }
+    }
+
+    public void Reset()
+    {
+        CriticalEncounters.Clear();
+        Progress.Clear();
+        lastStates.Clear();
     }
 }

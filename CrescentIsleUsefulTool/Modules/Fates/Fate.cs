@@ -2,96 +2,58 @@ using System;
 using System.Numerics;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
-using Dalamud.Game.ClientState.Fates;
-using Ocelot.Modules;
+using ECommons.DalamudServices;
 
 namespace CrescentIsleUsefulTool.Modules.Fates;
 
-public class Fate(IFate fate)
+/// <summary>
+/// A managed snapshot of an active FATE. Dalamud's IFate points into the
+/// game's live FATE table and must not be retained after the framework update
+/// in which it was obtained. Keeping that pointer after a FATE despawns can
+/// turn an innocent UI name read into an uncatchable access violation.
+/// </summary>
+public class Fate
 {
-    public readonly EventData Data = EventData.GetFate(fate.FateId);
+    public readonly EventData Data;
 
-    public readonly DateTime SpawnedAt = DateTime.Now;
+    public readonly DateTime SpawnedAt;
 
-    public uint Id
-    {
-        get
-        {
-            try
-            {
-                return fate.FateId;
-            }
-            catch (AccessViolationException)
-            {
-                return 0;
-            }
-        }
-    }
+    public uint Id { get; }
 
-    public string Name
-    {
-        get
-        {
-            try
-            {
-                return fate.Name.ToString();
-            }
-            catch (AccessViolationException)
-            {
-                return "Unknown Fate";
-            }
-        }
-    }
+    public string Name { get; }
 
-    public float Radius
-    {
-        get
-        {
-            try
-            {
-                return Data.Radius ?? fate.Radius;
-            }
-            catch (AccessViolationException)
-            {
-                return 0f;
-            }
-        }
-    }
+    public float Radius { get; private set; }
 
-    public Vector3 StartPosition
-    {
-        get
-        {
-            try
-            {
-                return Data.StartPosition ?? fate.Position;
-            }
-            catch (AccessViolationException)
-            {
-                return Vector3.Zero;
-            }
-        }
-    }
+    public Vector3 StartPosition { get; private set; }
 
     public readonly EventProgress Progress = new();
 
-    public byte CurrentProgress
+    public byte CurrentProgress { get; private set; }
+
+    public Fate(uint id, byte currentProgress, float runtimeRadius, Vector3 runtimePosition)
     {
-        get
-        {
-            try
-            {
-                return fate.Progress;
-            }
-            catch (AccessViolationException)
-            {
-                return 100;
-            }
-        }
+        Id = id;
+        Data = EventData.GetFate(id);
+        SpawnedAt = DateTime.Now;
+        Name = ResolveName(id, Data.InternalName);
+        Radius = Data.Radius ?? runtimeRadius;
+        StartPosition = Data.StartPosition ?? runtimePosition;
+        Refresh(currentProgress, runtimeRadius, runtimePosition);
     }
 
-    public void Update(UpdateContext context)
+    public void Refresh(byte currentProgress, float runtimeRadius, Vector3 runtimePosition)
     {
+        CurrentProgress = currentProgress;
+        if (Data.Radius == null && runtimeRadius > 0f)
+        {
+            Radius = runtimeRadius;
+        }
+
+        if (Data.StartPosition == null && runtimePosition != Vector3.Zero)
+        {
+            StartPosition = runtimePosition;
+        }
+
         if (CurrentProgress <= 0)
         {
             return;
@@ -111,5 +73,20 @@ public class Fate(IFate fate)
     public Aethernet GetAethernet()
     {
         return Data.Aethernet ?? ZoneData.GetClosestAethernetShard(StartPosition);
+    }
+
+    private static string ResolveName(uint id, string fallback)
+    {
+        var sheet = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Fate>();
+        if (sheet.TryGetRow(id, out var row))
+        {
+            var name = row.Name.ToString();
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                return name;
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(fallback) ? $"FATE {id}" : fallback;
     }
 }

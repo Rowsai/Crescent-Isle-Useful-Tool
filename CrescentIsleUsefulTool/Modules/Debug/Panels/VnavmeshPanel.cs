@@ -1,4 +1,5 @@
 using System.Numerics;
+using CrescentIsleUsefulTool.Ipc;
 using Dalamud.Bindings.ImGui;
 using Ocelot.Ui;
 using Ocelot.IPC;
@@ -14,16 +15,17 @@ public class VnavmeshPanel : Panel
 
     public override void Render(DebugModule module)
     {
-        if (module.TryGetIPCSubscriber<VNavmesh>(out var vnav) && vnav!.IsReady())
+        if (module.TryGetIPCSubscriber<VNavmesh>(out var vnav) && VnavmeshIpc.IsOperational(vnav, out _))
         {
             OcelotUi.Title("Vnav state:");
             ImGui.SameLine();
-            ImGui.TextUnformatted(vnav.IsRunning() ? "Running" : "Pending");
+            VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
+            ImGui.TextUnformatted(isRunning ? "Running" : "Pending");
 
 
             if (ImGui.Button("Test vnav thingy"))
             {
-                vnav.FollowPath([new Vector3(815.2f, 72.5f, -705.15f)], false);
+                VnavmeshIpc.TryFollowPath(vnav, [new Vector3(815.2f, 72.5f, -705.15f)], false);
             }
         }
     }
