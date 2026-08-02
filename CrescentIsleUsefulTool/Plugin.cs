@@ -13,6 +13,8 @@ namespace CrescentIsleUsefulTool;
 
 public sealed class Plugin : OcelotPlugin
 {
+    public static string DisplayVersion => typeof(Plugin).Assembly.GetName().Version?.ToString(3) ?? "開発版";
+
     public override string Name
     {
         get => "Crescent Isle Useful Tool";

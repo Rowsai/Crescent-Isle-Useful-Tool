@@ -174,8 +174,8 @@
         }
       },
       "messages": {
-        "off": "[Crescent Isle Useful Tool] 自動操作モード OFF",
-        "on": "[Crescent Isle Useful Tool] 自動操作モード ON"
+        "off": "[Crescent Isle Useful Tool] 自動操作モード 無効",
+        "on": "[Crescent Isle Useful Tool] 自動操作モード 有効"
       }
     }
   }

@@ -182,9 +182,7 @@ public class CriticalEncounter : Activity
 
     public override string GetName()
     {
-        return source.CriticalEncounters.TryGetValue(data.Id, out var encounter)
-            ? encounter.Name
-            : data.InternalName;
+        return EventData.GetCriticalEncounterDisplayName(data.Id);
     }
 
     private bool IsCloseToZone(float radius = 50f)

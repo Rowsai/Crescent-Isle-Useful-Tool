@@ -106,6 +106,34 @@ public struct EventData
         return string.IsNullOrWhiteSpace(data.InternalName) ? $"CE {id}" : data.InternalName;
     }
 
+    public static string GetFateDisplayName(uint id, string? fallback = null)
+    {
+        var north = NorthHornContent.Fates.FirstOrDefault(fate => fate.Id == id);
+        if (north.Id == id && !string.IsNullOrWhiteSpace(north.JapaneseName))
+        {
+            return north.JapaneseName;
+        }
+
+        try
+        {
+            var sheet = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Fate>(ClientLanguage.Japanese);
+            if (sheet.TryGetRow(id, out var row))
+            {
+                var name = row.Name.ToString();
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    return name;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Debug(ex, $"Unable to resolve the Japanese FATE name for row {id}.");
+        }
+
+        return string.IsNullOrWhiteSpace(fallback) ? $"FATE {id}" : fallback;
+    }
+
     public readonly static Dictionary<uint, EventData> Fates = new()
     {
         {

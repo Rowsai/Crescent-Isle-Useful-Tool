@@ -53,9 +53,9 @@ public sealed class Treasure
     {
         return Type switch
         {
-            TreasureType.Bronze => "Bronze Treasure Coffer",
-            TreasureType.Silver => "Silver Treasure Coffer",
-            _ => "Unknown Treasure Coffer",
+            TreasureType.Bronze => "青銅の宝箱",
+            TreasureType.Silver => "白銀の宝箱",
+            _ => "種類不明の宝箱",
         };
     }
 

@@ -1,4 +1,5 @@
 using System.Linq;
+using CrescentIsleUsefulTool.Modules.MobFarmer.States;
 using CrescentIsleUsefulTool.Ui;
 using Dalamud.Bindings.ImGui;
 using Ocelot;
@@ -9,7 +10,7 @@ public class Panel
 {
     public void Draw(MobFarmerModule module)
     {
-        CrescentTheme.Card("MobFarmer", "MOB FARMER", () =>
+        CrescentTheme.Card("MobFarmer", "モブ討伐支援", () =>
         {
             if (ImGui.Button(module.Farmer.Running ? I18N.T("generic.label.stop") : I18N.T("generic.label.start")))
             {
@@ -19,7 +20,7 @@ public class Panel
             if (module.Farmer.Running)
             {
                 ImGui.SameLine();
-                ImGui.TextColored(CrescentTheme.Success, module.Farmer.StateMachine.State.ToString());
+                ImGui.TextColored(CrescentTheme.Success, GetPhaseLabel(module.Farmer.StateMachine.State));
             }
 
             ImGui.Spacing();
@@ -31,5 +32,18 @@ public class Panel
             ImGui.SameLine();
             ImGui.TextColored(CrescentTheme.Warning, module.Scanner.InCombat.Count().ToString());
         }, "周辺エネミーの自動戦闘状態");
+    }
+
+    private static string GetPhaseLabel(FarmerPhase phase)
+    {
+        return phase switch
+        {
+            FarmerPhase.Waiting => "待機中",
+            FarmerPhase.Buffing => "戦闘準備中",
+            FarmerPhase.Gathering => "敵を集めています",
+            FarmerPhase.Stacking => "敵をまとめています",
+            FarmerPhase.Fighting => "戦闘中",
+            _ => "状態不明",
+        };
     }
 }

@@ -14,12 +14,12 @@ public class Panel
             return;
         }
 
-        CrescentTheme.Card("ForkedTower", "FORKED TOWER", () =>
+        CrescentTheme.Card("ForkedTower", "フォークタワー", () =>
         {
-            var state = OcelotUi.LabelledValue("Tower ID", module.TowerRun.Hash);
+            var state = OcelotUi.LabelledValue("塔内セッションID", module.TowerRun.Hash);
             if (state == UiState.Hovered)
             {
-                ImGui.SetTooltip("This is unique to you.");
+                ImGui.SetTooltip("プレイヤーごとに異なる識別情報です。");
             }
         }, "塔内セッション情報");
     }

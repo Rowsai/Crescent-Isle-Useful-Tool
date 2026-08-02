@@ -24,25 +24,21 @@ public class Panel
                 }
                 else
                 {
-                    ImGui.TextColored(TreasureModule.Bronze, $"青銅 {module.Hunter.ExtractedBronzeCount}");
+                    if (ImGui.BeginTable("##TreasureRouteCounts", 4, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.SizingStretchSame))
+                    {
+                        DrawRouteCount("全地点", module.Hunter.ExtractedLocationCount, CrescentTheme.AccentSoft);
+                        DrawRouteCount("巡回済み", module.Hunter.CompletedLocationCount, CrescentTheme.Success);
+                        DrawRouteCount("残り", module.Hunter.RemainingLocationCount, CrescentTheme.Warning);
+                        DrawRouteCount("到達不可", module.Hunter.UnreachableLocationCount, CrescentTheme.Danger);
+                        ImGui.EndTable();
+                    }
+
+                    ImGui.TextColored(TreasureModule.Bronze, $"座標内訳：青銅 {module.Hunter.ExtractedBronzeCount}");
                     ImGui.SameLine();
                     ImGui.TextColored(TreasureModule.Silver, $"白銀 {module.Hunter.ExtractedSilverCount}");
-                    ImGui.SameLine();
-                    ImGui.TextDisabled($"合計 {module.Hunter.ExtractedLocationCount}");
-
-                    ImGui.TextDisabled($"巡回済み {module.Hunter.CompletedLocationCount} / 残り {module.Hunter.RemainingLocationCount}");
-                    if (module.Hunter.UnreachableLocationCount > 0)
-                    {
-                        ImGui.SameLine();
-                        ImGui.TextColored(CrescentTheme.Warning, $"到達不可 {module.Hunter.UnreachableLocationCount}");
-                    }
                     if (module.Hunter.ExcludedUndergroundLocationCount > 0)
                     {
-                        ImGui.SameLine();
-                        ImGui.TextColored(
-                            CrescentTheme.Muted,
-                            $"地下空洞 {module.Hunter.ExcludedUndergroundLocationCount}件を除外"
-                        );
+                        ImGui.TextColored(CrescentTheme.Muted, $"地下空洞 {module.Hunter.ExcludedUndergroundLocationCount}地点は巡回対象外です。");
                     }
 
                     ImGui.Spacing();
@@ -75,14 +71,24 @@ public class Panel
 
     private static void DrawSurfaceCountValidation(TreasureModule module)
     {
-        ImGui.TextDisabled("マギ・トレジャーサーチ照合");
+        ImGui.TextColored(CrescentTheme.AccentSoft, "マギ・トレジャーサーチ開始時結果");
         if (!module.Hunter.RouteStartRemainingChestCount.HasValue)
         {
-            ImGui.TextColored(CrescentTheme.Muted, "開始時に残り宝箱数を取得します。");
+            ImGui.TextColored(CrescentTheme.Muted, "開始操作後に青銅・白銀それぞれの残数を取得します。");
             return;
         }
 
-        ImGui.TextUnformatted($"開始時 {module.Hunter.RouteStartRemainingChestCount.Value}個 / 地上で取得 {module.Hunter.SurfaceOpenedThisRun}個");
+        if (ImGui.BeginTable("##RouteStartTreasureCounts", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.SizingStretchSame))
+        {
+            DrawCount("残り青銅", module.Hunter.RouteStartBronzeChestCount ?? 0, 30, TreasureModule.Bronze, false);
+            DrawCount("残り白銀", module.Hunter.RouteStartSilverChestCount ?? 0, 8, TreasureModule.Silver, false);
+            ImGui.TableNextColumn();
+            ImGui.TextDisabled("残り合計");
+            ImGui.TextColored(CrescentTheme.AccentSoft, $"{module.Hunter.RouteStartRemainingChestCount.Value}個");
+            ImGui.EndTable();
+        }
+
+        ImGui.TextDisabled($"この巡回で開封：{module.Hunter.SurfaceOpenedThisRun}個");
         if (!module.Hunter.SurfaceCountValidationCompleted)
         {
             ImGui.TextColored(CrescentTheme.AccentSoft, $"地上ルート巡回中（現在の残数 {module.Tracker.RemainingChests}個）");
@@ -104,7 +110,9 @@ public class Panel
     {
         if (!module.Tracker.CountInitialised)
         {
-            CrescentTheme.EmptyState("取得可能な宝箱数を計測しています。");
+            CrescentTheme.EmptyState(module.Tracker.CountMeasurementFailed
+                ? "マギ・トレジャーサーチの結果を取得できませんでした。次回使用時に再取得します。"
+                : "マギ・トレジャーサーチの青銅・白銀残数を待っています。");
         }
         else if (ImGui.BeginTable("##TreasureCounts", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.SizingStretchSame))
         {
@@ -114,6 +122,11 @@ public class Panel
             ImGui.TextDisabled(module.T("panel.remaining.label"));
             ImGui.TextColored(CrescentTheme.AccentSoft, module.Tracker.RemainingChests.ToString());
             ImGui.EndTable();
+        }
+
+        if (module.Tracker.CountMeasurementPending)
+        {
+            ImGui.TextColored(CrescentTheme.AccentSoft, "● マギ・トレジャーサーチで残数を再計測中です。");
         }
 
         ImGui.Spacing();
@@ -134,5 +147,12 @@ public class Panel
             ImGui.SameLine();
             ImGui.TextDisabled($"({value / (float)maximum * 100f:F1}%)");
         }
+    }
+
+    private static void DrawRouteCount(string label, int value, Vector4 color)
+    {
+        ImGui.TableNextColumn();
+        ImGui.TextDisabled(label);
+        ImGui.TextColored(color, value.ToString());
     }
 }

@@ -7,6 +7,8 @@ using CrescentIsleUsefulTool.Enums;
 using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.Text;
+using Dalamud.Game.Text.SeStringHandling;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -21,6 +23,8 @@ public class TreasureTracker : IDisposable
 
     private readonly HashSet<ulong> recordedOpenedTreasures = [];
 
+    private string? countMessagePattern;
+
     private int observedAcquiredBronzeChests;
 
     private int observedAcquiredSilverChests;
@@ -28,6 +32,10 @@ public class TreasureTracker : IDisposable
     public List<Treasure> Treasures { get; private set; } = [];
 
     public bool CountInitialised { get; private set; } = false;
+
+    public bool CountMeasurementPending { get; private set; }
+
+    public bool CountMeasurementFailed { get; private set; }
 
     public int CountRevision { get; private set; }
 
@@ -64,6 +72,12 @@ public class TreasureTracker : IDisposable
             .Select(obj => new Treasure(obj))
             .OrderBy(treasure => Player.DistanceTo(treasure.Position))
             .ToList();
+
+        if (CountMeasurementPending && DateTime.UtcNow - MeasurementRequestedAtUtc > TimeSpan.FromSeconds(10))
+        {
+            CountMeasurementPending = false;
+            CountMeasurementFailed = true;
+        }
     }
 
     public bool RecordAcquired(ulong entityId, TreasureType treasureType)
@@ -89,9 +103,21 @@ public class TreasureTracker : IDisposable
 
     public void BeginCountMeasurement()
     {
-        CountInitialised = false;
+        // Keep the last confirmed values visible while a new measurement is
+        // pending. Clearing them here made the panel look permanently empty
+        // whenever the one-frame wide-text event was missed.
+        CountMeasurementPending = true;
+        CountMeasurementFailed = false;
         LastParseWideText = DateTime.MinValue;
         MeasurementRequestedAtUtc = DateTime.UtcNow;
+    }
+
+    public void OnChatMessage(XivChatType type, int timestamp, SeString sender, SeString message, bool isHandled)
+    {
+        if (ZoneData.IsInOccultCrescent())
+        {
+            TryUpdateCounts(message.TextValue);
+        }
     }
 
     public void ResetSession()
@@ -103,6 +129,8 @@ public class TreasureTracker : IDisposable
         BronzeChests = 0;
         SilverChests = 0;
         CountInitialised = false;
+        CountMeasurementPending = false;
+        CountMeasurementFailed = false;
         CountRevision = 0;
         LastParseWideText = DateTime.MinValue;
         MeasurementRequestedAtUtc = DateTime.MinValue;
@@ -149,26 +177,74 @@ public class TreasureTracker : IDisposable
             return;
         }
 
-        var pattern = LogMessageHelper.GetLogMessagePattern(10965);
         var text = textNode->NodeText.ToString();
-        var match = Regex.Match(text, pattern);
+        TryUpdateCounts(text);
+    }
 
-        if (!match.Success)
+    private bool TryUpdateCounts(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
         {
-            return;
+            return false;
         }
 
-        if (!int.TryParse(match.Groups[1].Value, out var silver) ||
-            !int.TryParse(match.Groups[2].Value, out var bronze))
+        countMessagePattern ??= LogMessageHelper.GetLogMessagePattern(10965);
+        var match = Regex.Match(text, countMessagePattern);
+
+        var silver = -1;
+        var bronze = -1;
+        var parsed = match.Success &&
+                     TryReadCount(match, "lnum1", 1, out silver) &&
+                     TryReadCount(match, "lnum2", 2, out bronze);
+
+        if (!parsed)
         {
-            return;
+            // Fallback for resolved/translated SeStrings. The Treasuresight
+            // result contains exactly the silver count followed by bronze.
+            var numbers = Regex.Matches(text, @"\d+")
+                .Select(value => int.TryParse(value.Value, out var number) ? number : -1)
+                .Where(value => value >= 0)
+                .ToArray();
+            parsed = numbers.Length >= 2 &&
+                     (text.Contains("銀", StringComparison.Ordinal) || text.Contains("silver", StringComparison.OrdinalIgnoreCase)) &&
+                     (text.Contains("銅", StringComparison.Ordinal) || text.Contains("bronze", StringComparison.OrdinalIgnoreCase));
+            if (parsed)
+            {
+                silver = numbers[0];
+                bronze = numbers[1];
+            }
+        }
+
+        if (!parsed)
+        {
+            return false;
+        }
+
+        if (silver is < 0 or > MaximumSilverChests || bronze is < 0 or > MaximumBronzeChests)
+        {
+            return false;
         }
 
         SilverChests = silver;
         BronzeChests = bronze;
         CountInitialised = true;
+        CountMeasurementPending = false;
+        CountMeasurementFailed = false;
         CountRevision++;
         LastParseWideText = DateTime.Now;
+        return true;
+    }
+
+    private static bool TryReadCount(Match match, string groupName, int fallbackIndex, out int value)
+    {
+        value = -1;
+        var group = match.Groups[groupName];
+        if (group.Success && int.TryParse(group.Value, out value))
+        {
+            return true;
+        }
+
+        return match.Groups.Count > fallbackIndex && int.TryParse(match.Groups[fallbackIndex].Value, out value);
     }
 
     public void Dispose()

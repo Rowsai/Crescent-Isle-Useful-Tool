@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Modules;
@@ -13,6 +15,7 @@ using CrescentIsleUsefulTool.Modules.ForkedTower;
 using CrescentIsleUsefulTool.Modules.MagicPot;
 using CrescentIsleUsefulTool.Modules.MobFarmer;
 using CrescentIsleUsefulTool.Modules.StateManager;
+using CrescentIsleUsefulTool.Modules.Teleporter;
 using CrescentIsleUsefulTool.Modules.Treasure;
 using CrescentIsleUsefulTool.Ui;
 using Dalamud.Bindings.ImGui;
@@ -21,6 +24,7 @@ using Dalamud.Interface.Windowing;
 using ECommons.DalamudServices;
 using Ocelot;
 using Ocelot.Windows;
+using CiutPlugin = CrescentIsleUsefulTool.Plugin;
 
 namespace CrescentIsleUsefulTool.Windows;
 
@@ -30,6 +34,11 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
     private uint selectedTerritory;
     private uint previousTerritory;
     private bool windowThemePushed;
+
+    protected override string GetWindowName()
+    {
+        return $"Crescent Isle Useful Tool v{CiutPlugin.DisplayVersion}##Main";
+    }
 
     public override void PreDraw()
     {
@@ -134,10 +143,10 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
         ImGui.TableNextColumn();
         ImGui.TextColored(CrescentTheme.AccentSoft, "CIUT");
         ImGui.SameLine();
-        ImGui.TextDisabled("OPERATIONS DASHBOARD");
+        ImGui.TextDisabled("統合探索ダッシュボード");
 
         ImGui.TableNextColumn();
-        ImGui.TextColored(CrescentTheme.Accent, currentTerritory == ZoneData.NORTHHORN ? "● NORTH HORN" : "● SOUTH HORN");
+        ImGui.TextColored(CrescentTheme.Accent, currentTerritory == ZoneData.NORTHHORN ? "● 北征編" : "● 南征編");
 
         ImGui.TableNextColumn();
         var buttonLabel = automator.IsEnabled ? "自動操作を停止" : "自動操作を開始";
@@ -182,6 +191,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
         DrawPage("宝箱・探索", () => DrawTreasurePage(context));
         DrawPage("支援ツール", () => DrawUtilityPage(context));
         DrawPage("計測", () => DrawMetricsPage(context));
+        DrawPage("現在の設定", DrawCurrentSettingsPage);
         ImGui.EndTabBar();
     }
 
@@ -214,6 +224,13 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
 
     private void DrawTreasurePage(RenderContext context)
     {
+        var carrots = Plugin.Modules.GetModule<CarrotsModule>();
+        if (!carrots.IsEnabled)
+        {
+            RenderModule<TreasureModule>(context);
+            return;
+        }
+
         DrawResponsiveColumns(
             () => RenderModule<TreasureModule>(context),
             () => RenderModule<CarrotsModule>(context));
@@ -235,6 +252,190 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
         DrawResponsiveColumns(
             () => RenderModule<CurrencyModule>(context),
             () => RenderModule<ExpModule>(context));
+    }
+
+    private void DrawCurrentSettingsPage()
+    {
+        var automator = primaryPlugin.Config.AutomatorConfig;
+        var teleporter = primaryPlugin.Config.TeleporterConfig;
+        var treasure = primaryPlugin.Config.TreasureConfig;
+        var magicPot = primaryPlugin.Config.MagicPotConfig;
+        var buff = primaryPlugin.Config.BuffConfig;
+        var fates = primaryPlugin.Config.FatesConfig;
+        var criticalEncounters = primaryPlugin.Config.CriticalEncountersConfig;
+        var carrots = primaryPlugin.Config.CarrotsConfig;
+        var forkedTower = primaryPlugin.Config.ForkedTowerConfig;
+        var mobFarmer = primaryPlugin.Config.MobFarmerConfig;
+        var windowManager = primaryPlugin.Config.WindowManagerConfig;
+        var eventDrop = primaryPlugin.Config.EventDropConfig;
+        var pathfinder = primaryPlugin.Config.PathfinderConfig;
+        var buffModule = Plugin.Modules.GetModule<BuffModule>();
+        var lowestBuffSeconds = buffModule.BuffManager.GetLowestBuffTimer(buffModule);
+        var buffRemaining = lowestBuffSeconds == int.MaxValue
+            ? "監視無効"
+            : lowestBuffSeconds <= 0
+                ? "未付与"
+                : $"最短 {lowestBuffSeconds / 60}分{lowestBuffSeconds % 60}秒";
+
+        DrawSettingsCard("CurrentAutomationSettings", "自動操作", [
+            Setting("自動操作モード", automator.Enabled),
+            Setting("CEへの自動移動", automator.DoCriticalEncounters),
+            Setting("FATEへの自動移動", automator.DoFates),
+            Setting("戦闘AIの自動切り替え", automator.ToggleAiProvider),
+            Setting("敵の自動ターゲット", automator.ForceTarget),
+            Setting("敵集団の中央を優先", automator.ForceTargetCentralEnemy && automator.ForceTarget),
+            Setting("CE移動前の待機", automator.DelayCriticalEncounters && automator.DoCriticalEncounters),
+            new SettingItem("戦闘AI", automator.AiProvider.ToLabel(), CrescentTheme.AccentSoft),
+            new SettingItem("交戦開始距離", $"{automator.EngagementRange:F1}m", CrescentTheme.AccentSoft),
+            new SettingItem("南征編CE／FATE", $"{automator.CriticalEncountersMap.Count(item => item.Value)}／{automator.FatesMap.Count(item => item.Value)}件 有効", CrescentTheme.AccentSoft),
+            new SettingItem("北征編CE／FATE", $"{NorthHornContent.CriticalEncounters.Count(item => automator.IsNorthCriticalEncounterEnabled(item.Id))}／{NorthHornContent.Fates.Count(item => automator.IsNorthFateEnabled(item.Id))}件 有効", CrescentTheme.AccentSoft),
+        ]);
+
+        DrawResponsiveColumns(
+            () => DrawSettingsCard("CurrentTravelSettings", "移動・帰還", [
+                Setting("テレポート後にマウント", teleporter.ShouldMount),
+                Setting("テレポート後に目的地へ移動", teleporter.PathToDestination),
+                Setting("FATE後に拠点へ帰還", teleporter.ReturnAfterFate),
+                Setting("CE後に拠点へ帰還", teleporter.ReturnAfterCriticalEncounter),
+                Setting("帰還後にエーテライトへ接近", teleporter.ApproachAetheryte),
+                new SettingItem("探索対象の判定距離", $"{pathfinder.DetectionRange:F0}m", CrescentTheme.AccentSoft),
+                new SettingItem("帰還経路コスト", $"{pathfinder.ReturnCost:F0}", CrescentTheme.AccentSoft),
+                new SettingItem("テレポート経路コスト", $"{pathfinder.TeleportCost:F0}", CrescentTheme.AccentSoft),
+            ]),
+            () => DrawSettingsCard("CurrentTreasureSettings", "宝箱・マジックポット", [
+                Setting("宝箱表示", treasure.Enabled),
+                Setting("青銅宝箱へのライン", treasure.DrawLineToBronzeChests && treasure.Enabled),
+                Setting("白銀宝箱へのライン", treasure.DrawLineToSilverChests && treasure.Enabled),
+                Setting("トレジャーハンター", treasure.EnableTreasureHunt && treasure.Enabled),
+                Setting("帰還時のマギ・トレジャーサーチ", treasure.CastTreasureSightUponReturn),
+                Setting("宝箱割合を表示", treasure.ShowPercentageActiveTreasureCount),
+                Setting("マジックポット予想", magicPot.Enabled),
+                Setting("マジックポット宝箱自動探索", magicPot.EnableTreasureSearchMode && magicPot.Enabled),
+            ]));
+
+        DrawResponsiveColumns(
+            () => DrawSettingsCard("CurrentMonitorSettings", "FATE・CE監視", [
+                Setting("FATE監視", fates.Enabled),
+                Setting("FATE発生をログ出力", fates.LogSpawn && fates.Enabled),
+                new SettingItem("FATE報酬通知", GetFateAlertSummary(fates), CrescentTheme.AccentSoft),
+                Setting("CE監視", criticalEncounters.Enabled),
+                Setting("CE発生をログ出力", criticalEncounters.LogSpawn && criticalEncounters.Enabled),
+                Setting("フォークタワーを追跡", criticalEncounters.TrackForkedTower && criticalEncounters.Enabled),
+                new SettingItem("CE報酬通知", GetCriticalEncounterAlertSummary(criticalEncounters), CrescentTheme.AccentSoft),
+            ]),
+            () => DrawSettingsCard("CurrentSupportSettings", "探索・計測・補助", [
+                Setting("にんじん探索", carrots.Enabled),
+                Setting("にんじんへのライン", carrots.DrawLineToCarrots && carrots.Enabled),
+                Setting("にんじん自動探索", carrots.EnableCarrotHunt && carrots.Enabled),
+                Setting("フォークタワー支援", forkedTower.Enabled),
+                Setting("モブ討伐支援", mobFarmer.Enabled),
+                Setting("通貨計測", primaryPlugin.Config.CurrencyConfig.Enabled),
+                Setting("経験値計測", primaryPlugin.Config.ExpConfig.Enabled),
+                new SettingItem("使用マウント", primaryPlugin.Config.MountConfig.MountRoulette ? "マウントルーレット" : $"マウントID {primaryPlugin.Config.MountConfig.Mount}", CrescentTheme.AccentSoft),
+            ]));
+
+        DrawResponsiveColumns(
+            () => DrawSettingsCard("CurrentBuffSettings", "たんきゅうしん・バフ", [
+                Setting("バフ機能", buff.Enabled),
+                Setting("たんきゅうしんを使用", buff.UseInquiringMind && buff.Enabled),
+                new SettingItem("再適用しきい値", $"残り{buff.ReapplyThreshold}分", CrescentTheme.AccentSoft),
+                new SettingItem(
+                    "現在の最短残り時間",
+                    buffRemaining,
+                    lowestBuffSeconds == int.MaxValue
+                        ? CrescentTheme.Muted
+                        : lowestBuffSeconds <= buff.ReapplyThreshold * 60
+                            ? CrescentTheme.Warning
+                            : CrescentTheme.Success),
+            ]),
+            () => DrawSettingsCard("CurrentDisplaySettings", "表示・ウィンドウ", [
+                Setting("デミアートマ報酬表示", eventDrop.ShowDemiatmaDrops),
+                Setting("ノート報酬表示", eventDrop.ShowNoteDrops),
+                Setting("ソウルシャード報酬表示", eventDrop.ShowSoulShardDrops),
+                Setting("起動時にメイン画面を開く", windowManager.OpenMainOnStartUp),
+                Setting("エリア入場時にメイン画面を開く", windowManager.OpenMainOnEnter),
+                Setting("エリア退出時にメイン画面を閉じる", windowManager.CloseMainOnExit),
+                Setting("戦闘中にメイン画面を隠す", windowManager.HideMainInCombat),
+            ]));
+    }
+
+    private static void DrawSettingsCard(string id, string title, IReadOnlyCollection<SettingItem> settings)
+    {
+        CrescentTheme.Card(id, title, () =>
+        {
+            if (!ImGui.BeginTable($"##{id}Table", 2, ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+            {
+                return;
+            }
+
+            ImGui.TableSetupColumn("設定", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("現在値", ImGuiTableColumnFlags.WidthFixed, 230f);
+            foreach (var setting in settings)
+            {
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(setting.Label);
+                ImGui.TableNextColumn();
+                ImGui.TextColored(setting.Color, setting.Value);
+            }
+
+            ImGui.EndTable();
+        }, "現在保存されている設定を表示します。");
+    }
+
+    private static SettingItem Setting(string label, bool enabled)
+    {
+        return new SettingItem(label, enabled ? "有効" : "無効", enabled ? CrescentTheme.Success : CrescentTheme.Muted);
+    }
+
+    private static string GetFateAlertSummary(FatesConfig config)
+    {
+        if (!config.Enabled)
+        {
+            return "監視無効";
+        }
+
+        if (config.AlertAll)
+        {
+            return "すべて通知";
+        }
+
+        var count = new[]
+        {
+            config.AlertAzurite,
+            config.AlertVerdigris,
+            config.AlertMalachite,
+            config.AlertRealgar,
+            config.AlertCaputMortuum,
+            config.AlertOrpiment,
+        }.Count(enabled => enabled);
+        return count == 0 ? "通知なし" : $"個別 {count}種類";
+    }
+
+    private static string GetCriticalEncounterAlertSummary(CriticalEncountersConfig config)
+    {
+        if (!config.Enabled)
+        {
+            return "監視無効";
+        }
+
+        if (config.AlertAll)
+        {
+            return "すべて通知";
+        }
+
+        var count = new[]
+        {
+            config.AlertAzurite,
+            config.AlertVerdigris,
+            config.AlertMalachite,
+            config.AlertRealgar,
+            config.AlertCaputMortuum,
+            config.AlertOrpiment,
+            config.AlertOracle,
+            config.AlertBerserker,
+            config.AlertRanger,
+        }.Count(enabled => enabled);
+        return count == 0 ? "通知なし" : $"個別 {count}種類";
     }
 
     private void DrawResponsiveColumns(Action left, Action right)
@@ -269,7 +470,24 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
         }
         else
         {
-            CrescentTheme.EmptyState($"{typeof(T).Name.Replace("Module", string.Empty)} は設定で無効です。");
+            CrescentTheme.EmptyState($"{GetModuleJapaneseName(typeof(T))}は設定で無効です。");
         }
     }
+
+    private static string GetModuleJapaneseName(Type moduleType)
+    {
+        if (moduleType == typeof(CarrotsModule)) return "にんじん探索";
+        if (moduleType == typeof(TreasureModule)) return "宝箱探索";
+        if (moduleType == typeof(MagicPotModule)) return "マジックポット";
+        if (moduleType == typeof(FatesModule)) return "FATE監視";
+        if (moduleType == typeof(CriticalEncountersModule)) return "CE監視";
+        if (moduleType == typeof(BuffModule)) return "バフ支援";
+        if (moduleType == typeof(ForkedTowerModule)) return "フォークタワー支援";
+        if (moduleType == typeof(MobFarmerModule)) return "モブ討伐支援";
+        if (moduleType == typeof(CurrencyModule)) return "通貨計測";
+        if (moduleType == typeof(ExpModule)) return "経験値計測";
+        return "この機能";
+    }
+
+    private readonly record struct SettingItem(string Label, string Value, Vector4 Color);
 }

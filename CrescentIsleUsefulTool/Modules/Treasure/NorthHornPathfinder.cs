@@ -48,14 +48,16 @@ public sealed class NorthHornPathfinder(
 
         State = PathfinderState.Pathfinding;
 
-        var remaining = nodes
+        var requested = nodes
             .Where(treasureById.ContainsKey)
             .Distinct()
             .ToHashSet();
-        var plateauNodes = remaining
+        var plateauNodes = requested
             .Where(id => IsSouthwestTurbulencePlateau(treasureById[id].Position))
             .ToHashSet();
-        remaining.ExceptWith(plateauNodes);
+        var canonicalGroundOrder = BuildCanonicalGroundOrder()
+            .Where(requested.Contains)
+            .ToList();
 
         var steps = new List<PathfinderStep>
         {
@@ -64,24 +66,19 @@ public sealed class NorthHornPathfinder(
         };
 
         var current = Aethernet.NorthBaseCamp.GetData().Position;
-        while (remaining.Count > 0)
+        foreach (var nextId in canonicalGroundOrder)
         {
-            var next = remaining
-                .Select(id => (Id: id, Plan: BuildTravelPlan(current, treasureById[id])))
-                .OrderBy(candidate => candidate.Plan.Cost)
-                .ThenBy(candidate => candidate.Id)
-                .First();
-
-            steps.AddRange(next.Plan.Steps);
-            current = treasureById[next.Id].Position;
-            remaining.Remove(next.Id);
+            var plan = BuildTravelPlan(current, treasureById[nextId]);
+            steps.AddRange(plan.Steps);
+            current = treasureById[nextId].Position;
         }
 
         if (plateauNodes.Count > 0)
         {
-            var westToEast = BuildPlateauPlan(current, plateauNodes, WestTurbulence, EastTurbulence);
-            var eastToWest = BuildPlateauPlan(current, plateauNodes, EastTurbulence, WestTurbulence);
-            var plateauPlan = westToEast.Cost <= eastToWest.Cost ? westToEast : eastToWest;
+            // Always enter from the west and leave from the east. A fixed
+            // direction plus a canonical full-layout order guarantees the
+            // same route on every run, including resumes with completed nodes.
+            var plateauPlan = BuildPlateauPlan(current, plateauNodes, WestTurbulence, EastTurbulence);
             steps.AddRange(plateauPlan.Steps);
         }
 
@@ -102,7 +99,12 @@ public sealed class NorthHornPathfinder(
             from,
             entry.LowerTrigger,
             PathfinderStep.RideTurbulence(entry.LowerTrigger, entry.UpperLanding));
-        var (orderedNodes, plateauCost) = FindShortestPlateauOrder(entry.UpperLanding, exit.UpperTrigger, nodes);
+        var canonicalNodes = treasureById.Keys
+            .Where(id => IsSouthwestTurbulencePlateau(treasureById[id].Position))
+            .ToHashSet();
+        var (canonicalOrder, _) = FindShortestPlateauOrder(entry.UpperLanding, exit.UpperTrigger, canonicalNodes);
+        var orderedNodes = canonicalOrder.Where(nodes.Contains).ToList();
+        var plateauCost = GetOrderedCost(entry.UpperLanding, exit.UpperTrigger, orderedNodes);
 
         var steps = new List<PathfinderStep>(entryTravel.Steps);
         steps.AddRange(orderedNodes.Select(PathfinderStep.WalkToDestination));
@@ -132,7 +134,7 @@ public sealed class NorthHornPathfinder(
                 return;
             }
 
-            foreach (var id in remaining.ToArray())
+            foreach (var id in remaining.OrderBy(id => id).ToArray())
             {
                 var destination = treasureById[id].Position;
                 var nextCost = cost + Vector3.Distance(current, destination);
@@ -151,6 +153,41 @@ public sealed class NorthHornPathfinder(
 
         Search(start, nodes.ToHashSet(), [], 0f);
         return (bestOrder, bestCost);
+    }
+
+    private List<uint> BuildCanonicalGroundOrder()
+    {
+        var remaining = treasureById.Keys
+            .Where(id => !IsSouthwestTurbulencePlateau(treasureById[id].Position))
+            .ToHashSet();
+        var order = new List<uint>(remaining.Count);
+        var current = Aethernet.NorthBaseCamp.GetData().Position;
+        while (remaining.Count > 0)
+        {
+            var next = remaining
+                .OrderBy(id => BuildTravelPlan(current, treasureById[id]).Cost)
+                .ThenBy(id => id)
+                .First();
+            order.Add(next);
+            current = treasureById[next].Position;
+            remaining.Remove(next);
+        }
+
+        return order;
+    }
+
+    private float GetOrderedCost(Vector3 start, Vector3 exit, IReadOnlyCollection<uint> nodes)
+    {
+        var cost = 0f;
+        var current = start;
+        foreach (var id in nodes)
+        {
+            var destination = treasureById[id].Position;
+            cost += Vector3.Distance(current, destination);
+            current = destination;
+        }
+
+        return cost + Vector3.Distance(current, exit);
     }
 
     private TravelPlan BuildTravelPlan(Vector3 from, TreasureData.TreasureDatum treasure)

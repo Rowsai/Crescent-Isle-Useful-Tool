@@ -11,6 +11,7 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Ocelot.Modules;
 using Ocelot.Windows;
+using CiutPlugin = CrescentIsleUsefulTool.Plugin;
 
 namespace CrescentIsleUsefulTool.Windows;
 
@@ -21,6 +22,11 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
 
     private IModule? selectedConfigModule;
     private bool windowThemePushed;
+
+    protected override string GetWindowName()
+    {
+        return $"Crescent Isle Useful Tool 設定 v{CiutPlugin.DisplayVersion}##Config";
+    }
 
     public override void PreDraw()
     {
@@ -85,7 +91,7 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
 
     private void DrawNavigation(IReadOnlyCollection<Module> modules)
     {
-        ImGui.TextColored(CrescentTheme.AccentSoft, "CONFIGURATION");
+        ImGui.TextColored(CrescentTheme.AccentSoft, "設定メニュー");
         ImGui.TextDisabled("カテゴリから機能を選択");
         ImGui.Spacing();
 
@@ -97,7 +103,7 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
                 continue;
             }
 
-            ImGui.TextColored(CrescentTheme.Muted, category.ToUpperInvariant());
+            ImGui.TextColored(CrescentTheme.Muted, category);
             ImGui.Separator();
             foreach (var module in categoryModules)
             {
@@ -164,23 +170,34 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
             return;
         }
 
-        if (ImGui.BeginTabItem("基本・南征編"))
+        if (ImGui.BeginTabItem("基本設定"))
         {
             CrescentTheme.Card(
                 "AutomationCommonConfig",
                 "自動操作の基本設定",
-                () => automator.RenderConfigUi(context),
-                "開始時にはAction ID 46606「たんきゅうしん」を必ず使用し、元のサポートジョブへ戻ります。"
+                () => automator.panel.DrawBasicConfiguration(automator),
+                "開始時にはアクションID 46606「たんきゅうしん」を必ず使用し、元のサポートジョブへ戻ります。"
             );
             ImGui.EndTabItem();
         }
 
-        if (ImGui.BeginTabItem("北征編コンテンツ"))
+        if (ImGui.BeginTabItem("南征編"))
+        {
+            CrescentTheme.Card(
+                "AutomationSouthConfig",
+                "南征編の対象設定",
+                () => automator.panel.DrawSouthConfiguration(automator),
+                "CEとFATEを北征編と同じ一覧レイアウトで個別設定できます。"
+            );
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("北征編"))
         {
             CrescentTheme.Card(
                 "AutomationNorthConfig",
                 "北征編の対象設定",
-                () => automator.panel.DrawConfigurationCatalog(automator),
+                () => automator.panel.DrawNorthConfiguration(automator),
                 "マジックポット、CE、FATEの対象を整理して表示します。"
             );
             ImGui.EndTabItem();
@@ -230,7 +247,7 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
 
                 ImGui.TextDisabled("対象バフが1つでも未付与、またはこの時間以下になると再使用します。");
             },
-            "まもる・かまえる・あいのうた・クイックステップを一括管理",
+            "いのり・かまえる・あいのうた・クイックステップを一括管理",
             CrescentTheme.Success
         );
 
@@ -270,11 +287,11 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
         ImGui.TableSetupColumn("Identity", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("Count", ImGuiTableColumnFlags.WidthFixed, 125f);
         ImGui.TableNextColumn();
-        ImGui.TextColored(CrescentTheme.AccentSoft, "CIUT SETTINGS");
+        ImGui.TextColored(CrescentTheme.AccentSoft, "CIUT 設定");
         ImGui.SameLine();
-        ImGui.TextDisabled("Blue Horizon UI");
+        ImGui.TextDisabled($"バージョン {CiutPlugin.DisplayVersion}");
         ImGui.TableNextColumn();
-        ImGui.TextColored(CrescentTheme.Accent, $"● {moduleCount} MODULES");
+        ImGui.TextColored(CrescentTheme.Accent, $"● 設定項目 {moduleCount}件");
         ImGui.EndTable();
     }
 

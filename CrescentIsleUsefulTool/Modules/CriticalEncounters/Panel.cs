@@ -43,7 +43,8 @@ public class Panel
 
                 var data = EventData.GetCriticalEncounter(ev.DynamicEventId);
 
-                ImGui.TextUnformatted(ev.Name.ToString());
+                var displayName = EventData.GetCriticalEncounterDisplayName(ev.DynamicEventId);
+                ImGui.TextUnformatted(displayName);
 
                 switch (ev.State)
                 {
@@ -94,7 +95,7 @@ public class Panel
                 {
                     var start = ev.Position;
 
-                    teleporter.teleporter.Button(data.Aethernet, start, ev.Name.ToString(), $"ce_{ev.DynamicEventId}", data);
+                    teleporter.teleporter.Button(data.Aethernet, start, displayName, $"ce_{ev.DynamicEventId}", data);
                 }
 
                 OcelotUi.Indent(() => EventIconRenderer.Drops(data, module.PluginConfig.EventDropConfig));
@@ -110,27 +111,27 @@ public class Panel
             return;
         }
 
-        OcelotUi.Error("This feature is a work in progress.");
+        OcelotUi.Error("この機能は現在調整中です。");
 
         if (ev.State == DynamicEventState.Inactive)
         {
-            ImGui.TextUnformatted($"{ev.Name}:");
+            ImGui.TextUnformatted($"{ev.Name}：");
 
             var time = module.Tracker.TowerTimer.GetTimeToForkedTowerSpawn(ev.State);
-            OcelotUi.Indent(() => { OcelotUi.LabelledValue("Forked Tower Spawn Estimate", $"{time:mm\\:ss}"); });
+            OcelotUi.Indent(() => { OcelotUi.LabelledValue("フォークタワー出現予想", $"{time:mm\\:ss}"); });
         }
         else
         {
-            ImGui.TextUnformatted($"{ev.Name}:");
+            ImGui.TextUnformatted($"{ev.Name}：");
 
             var time = module.Tracker.TowerTimer.GetTimeRemainingToRegister(ev.State);
-            OcelotUi.Indent(() => { OcelotUi.LabelledValue("Forked Tower Register", $"{time:mm\\:ss}"); });
+            OcelotUi.Indent(() => { OcelotUi.LabelledValue("フォークタワー受付終了まで", $"{time:mm\\:ss}"); });
         }
 
         OcelotUi.Indent(32, () =>
         {
-            OcelotUi.LabelledValue("Critical Encounters completed", module.Tracker.TowerTimer.CriticalEncountersCompleted);
-            OcelotUi.LabelledValue("Fates completed", module.Tracker.TowerTimer.FatesCompleted);
+            OcelotUi.LabelledValue("完了したCE", module.Tracker.TowerTimer.CriticalEncountersCompleted);
+            OcelotUi.LabelledValue("完了したFATE", module.Tracker.TowerTimer.FatesCompleted);
         });
 
 
@@ -141,16 +142,16 @@ public class Panel
 
         OcelotUi.Indent(() =>
         {
-            OcelotUi.LabelledValue("Players on Platform", TowerHelper.GetPlayersInTowerZone(TowerHelper.TowerType.Blood));
+            OcelotUi.LabelledValue("足場上のプレイヤー", TowerHelper.GetPlayersInTowerZone(TowerHelper.TowerType.Blood));
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip("This includes your character");
+                ImGui.SetTooltip("自分のキャラクターを含みます");
             }
 
-            OcelotUi.LabelledValue("Players near Platform", TowerHelper.GetPlayersNearTowerZone(TowerHelper.TowerType.Blood));
+            OcelotUi.LabelledValue("足場付近のプレイヤー", TowerHelper.GetPlayersNearTowerZone(TowerHelper.TowerType.Blood));
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip("This includes your character");
+                ImGui.SetTooltip("自分のキャラクターを含みます");
             }
         });
     }

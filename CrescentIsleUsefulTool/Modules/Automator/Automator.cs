@@ -135,15 +135,11 @@ public class Automator
             // Tracker removal and the state transition to Idle are not atomic.
             // Waiting for both used to lose the completion return when the
             // event disappeared one frame before StateManager reached Idle.
-            if (Activity.HasParticipated)
-            {
-                CompleteActivity(Activity, module, vnav);
-                return;
-            }
-
-            Plugin.Chain.Abort();
-            VnavmeshIpc.TryStop(vnav);
-            Activity = null;
+            // An event can end while we are still travelling and before the
+            // participation state is observed. Treat disappearance as a
+            // completion in both cases so the character never stops there.
+            CompleteActivity(Activity, module, vnav);
+            return;
         }
 
         // CE/FATE destinations take precedence over an already queued utility
@@ -235,7 +231,7 @@ public class Automator
         }
 
         idleTime += framework.UpdateDelta.TotalMilliseconds;
-        if (idleTime > 3000)
+        if (idleTime > 250)
         {
             idleTime = 0;
 

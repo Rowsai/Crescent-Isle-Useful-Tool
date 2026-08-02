@@ -437,4 +437,46 @@ public class AutomatorConfig : ModuleConfig
     {
         return !NorthFates.TryGetValue(id, out var enabled) || enabled;
     }
+
+    public void SetSouthCriticalEncounterEnabled(uint id, bool enabled)
+    {
+        switch (id)
+        {
+            case 33: DoScourgeOfTheMind = enabled; break;
+            case 34: DoTheBlackRegiment = enabled; break;
+            case 35: DoTheUnbridled = enabled; break;
+            case 36: DoCrawlingDeath = enabled; break;
+            case 37: DoCalamityBound = enabled; break;
+            case 38: DoTrialByClaw = enabled; break;
+            case 39: DoFromTimesBygone = enabled; break;
+            case 40: DoCompanyOfStone = enabled; break;
+            case 41: DoSharkAttack = enabled; break;
+            case 42: DoOnTheHunt = enabled; break;
+            case 43: DoWithExtremePrejudice = enabled; break;
+            case 44: DoNoiseComplaint = enabled; break;
+            case 45: DoCursedConcern = enabled; break;
+            case 46: DoEternalWatch = enabled; break;
+            case 47: DoFlameOfDusk = enabled; break;
+        }
+    }
+
+    public void SetSouthFateEnabled(uint id, bool enabled)
+    {
+        switch (id)
+        {
+            case 1962: DoRoughWaters = enabled; break;
+            case 1963: DoTheGoldenGuardian = enabled; break;
+            case 1964: DoKingOfTheCrescent = enabled; break;
+            case 1965: DoTheWingedTerror = enabled; break;
+            case 1966: DoAnUnendingDuty = enabled; break;
+            case 1967: DoBrainDrain = enabled; break;
+            case 1968: DoADelicateBalance = enabled; break;
+            case 1969: DoSwornToSoil = enabled; break;
+            case 1970: DoAPryingEye = enabled; break;
+            case 1971: DoFatalAllure = enabled; break;
+            case 1972: DoServingDarkness = enabled; break;
+            case 1976: DoPersistentPots = enabled; break;
+            case 1977: DoPleadingPots = enabled; break;
+        }
+    }
 }

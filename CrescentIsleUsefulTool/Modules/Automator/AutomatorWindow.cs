@@ -6,6 +6,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Bindings.ImGui;
 using Ocelot;
 using Ocelot.Windows;
+using CiutPlugin = CrescentIsleUsefulTool.Plugin;
 
 namespace CrescentIsleUsefulTool.Modules.Automator;
 
@@ -67,7 +68,7 @@ public class AutomatorWindow(Plugin _plugin, Config _config) : OcelotWindow(_plu
         var automator = Plugin.Modules.GetModule<AutomatorModule>();
         if (!automator.IsEnabled)
         {
-            ImGui.TextUnformatted("自動操作モードはOFFです。");
+            ImGui.TextUnformatted("自動操作モードは無効です。");
             return;
         }
 
@@ -76,6 +77,6 @@ public class AutomatorWindow(Plugin _plugin, Config _config) : OcelotWindow(_plu
 
     protected override string GetWindowName()
     {
-        return Plugin.Modules.GetModule<AutomatorModule>().T("panel.lens.title");
+        return $"自動操作モード v{CiutPlugin.DisplayVersion}";
     }
 }

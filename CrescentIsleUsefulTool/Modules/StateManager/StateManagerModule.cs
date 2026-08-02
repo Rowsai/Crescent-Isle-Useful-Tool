@@ -87,6 +87,13 @@ public class StateManagerModule : Module
 
     public string GetStateText()
     {
-        return GetState().ToString();
+        return GetState() switch
+        {
+            State.Idle => "待機中",
+            State.InCombat => "戦闘中",
+            State.InFate => "FATE参加中",
+            State.InCriticalEncounter => "CE参加中",
+            _ => "状態不明",
+        };
     }
 }

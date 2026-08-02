@@ -112,7 +112,9 @@ public static class CrescentTheme
         ImGui.TextUnformatted(title);
         if (!string.IsNullOrWhiteSpace(subtitle))
         {
-            ImGui.TextDisabled(subtitle);
+            ImGui.PushStyleColor(ImGuiCol.Text, Muted);
+            ImGui.TextWrapped(subtitle);
+            ImGui.PopStyleColor();
         }
 
         ImGui.Spacing();
@@ -135,7 +137,9 @@ public static class CrescentTheme
     {
         ImGui.TextColored(Muted, "—");
         ImGui.SameLine();
-        ImGui.TextDisabled(message);
+        ImGui.PushStyleColor(ImGuiCol.Text, Muted);
+        ImGui.TextWrapped(message);
+        ImGui.PopStyleColor();
     }
 
     public readonly struct ThemeScope : IDisposable

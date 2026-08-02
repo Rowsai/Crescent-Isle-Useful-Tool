@@ -23,7 +23,7 @@ public class Panel
                 if (ImGui.BeginTable("##AutomationSummary", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchSame))
                 {
                     ImGui.TableNextColumn();
-                    CrescentTheme.Status("ステータス", module.IsEnabled ? "ON" : "OFF", module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted);
+                    CrescentTheme.Status("ステータス", module.IsEnabled ? "有効" : "無効", module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted);
                     ImGui.TableNextColumn();
                     ImGui.TextDisabled("操作モード");
                     ImGui.TextColored(module.IsEnabled ? CrescentTheme.AccentSoft : CrescentTheme.Muted, GetActiveMode(module));
@@ -53,7 +53,7 @@ public class Panel
         }
 
         ImGui.TableNextColumn();
-        if (ImGui.Button(module.IsEnabled ? "自動操作 OFF##MainAutomationToggle" : "自動操作 ON##MainAutomationToggle", new System.Numerics.Vector2(-1f, 0f)))
+        if (ImGui.Button(module.IsEnabled ? "自動操作を停止##MainAutomationToggle" : "自動操作を開始##MainAutomationToggle", new System.Numerics.Vector2(-1f, 0f)))
         {
             if (module.IsEnabled)
             {
@@ -68,7 +68,7 @@ public class Panel
         ImGui.TableNextColumn();
         var ceEnabled = module.Config.DoCriticalEncounters;
         if (ImGui.Button(
-                ceEnabled ? "CE移動 OFF##MainCeToggle" : "CE移動 ON##MainCeToggle",
+                ceEnabled ? "CE移動を停止##MainCeToggle" : "CE移動を開始##MainCeToggle",
                 new System.Numerics.Vector2(-1f, 0f)))
         {
             module.SetCriticalEncounterTravelEnabled(!ceEnabled);
@@ -78,7 +78,7 @@ public class Panel
         ImGui.TableNextColumn();
         var fateEnabled = module.Config.DoFates;
         if (ImGui.Button(
-                fateEnabled ? "FATE移動 OFF##MainFateToggle" : "FATE移動 ON##MainFateToggle",
+                fateEnabled ? "FATE移動を停止##MainFateToggle" : "FATE移動を開始##MainFateToggle",
                 new System.Numerics.Vector2(-1f, 0f)))
         {
             module.SetFateTravelEnabled(!fateEnabled);
@@ -89,7 +89,7 @@ public class Panel
 
         ImGui.TextColored(
             !ceEnabled && !fateEnabled ? CrescentTheme.Warning : CrescentTheme.Muted,
-            !ceEnabled && !fateEnabled ? "CE・FATEともにOFF：拠点待機" : "優先順位：マジックポット → CE → FATE");
+            !ceEnabled && !fateEnabled ? "CE・FATEともに無効：拠点待機" : "優先順位：マジックポット → CE → FATE");
     }
 
     private static string GetActiveMode(AutomatorModule module)
@@ -118,49 +118,151 @@ public class Panel
         return activity.data.Type == EventType.CriticalEncounter ? "CEへ移動・参加中" : "FATEへ移動・参加中";
     }
 
-    /// <summary>
-    /// North Horn content belongs on the automation-mode configuration page,
-    /// not on the main status page.  The generated South Horn settings remain
-    /// above this compact two-tab catalogue.
-    /// </summary>
-    public void DrawConfigurationCatalog(AutomatorModule module)
+    public void DrawBasicConfiguration(AutomatorModule module)
     {
-        ImGui.TextColored(CrescentTheme.AccentSoft, "北征編 自動操作対象");
-        ImGui.TextDisabled("自動移動の対象を選択できます。チェックを外した項目は無視されます。");
+        var changed = false;
+        CrescentTheme.Status("自動操作モード", module.IsEnabled ? "稼働中" : "停止中", module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted);
+        ImGui.TextDisabled("自動操作モード自体の開始・停止は、メイン画面のボタンから操作します。");
         ImGui.Spacing();
 
-        if (!ImGui.BeginTabBar("##NorthHornAutomationModeCatalog"))
+        ImGui.TextUnformatted("戦闘AIプロバイダー");
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.BeginCombo("##AutomationAiProvider", module.Config.AiProvider.ToLabel()))
+        {
+            foreach (var provider in Enum.GetValues<AiType>())
+            {
+                if (ImGui.Selectable(provider.ToLabel(), provider == module.Config.AiProvider))
+                {
+                    module.Config.AiProvider = provider;
+                    changed = true;
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        var toggleAi = module.Config.ToggleAiProvider;
+        if (ImGui.Checkbox("FATE・CE参加時に戦闘AIを自動切り替え##ToggleAiProvider", ref toggleAi))
+        {
+            module.Config.ToggleAiProvider = toggleAi;
+            changed = true;
+        }
+
+        var forceTarget = module.Config.ForceTarget;
+        if (ImGui.Checkbox("参加中の敵を自動ターゲット##ForceTarget", ref forceTarget))
+        {
+            module.Config.ForceTarget = forceTarget;
+            changed = true;
+        }
+
+        var centralTarget = module.Config.ForceTargetCentralEnemy;
+        if (ImGui.Checkbox("敵集団の中央を優先##ForceCentralTarget", ref centralTarget))
+        {
+            module.Config.ForceTargetCentralEnemy = centralTarget;
+            changed = true;
+        }
+
+        var delayCe = module.Config.DelayCriticalEncounters;
+        if (ImGui.Checkbox("CEへ向かう前に10～15秒待機##DelayCriticalEncounter", ref delayCe))
+        {
+            module.Config.DelayCriticalEncounters = delayCe;
+            changed = true;
+        }
+
+        var range = module.Config.EngagementRange;
+        ImGui.TextUnformatted($"交戦開始距離：{range:F1}m");
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.SliderFloat("##AutomationEngagementRange", ref range, 5f, 30f, "%.1f m"))
+        {
+            module.Config.EngagementRange = range;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            module.PluginConfig.Save();
+        }
+    }
+
+    public void DrawSouthConfiguration(AutomatorModule module)
+    {
+        var criticalEncounters = module.Config.CriticalEncountersMap.Keys
+            .OrderBy(id => id)
+            .Select(id => new ActivityOption(id, EventData.GetCriticalEncounterDisplayName(id), $"コンテンツID：{id}"))
+            .ToList();
+        var fates = module.Config.FatesMap.Keys
+            .OrderBy(id => id)
+            .Select(id => new ActivityOption(id, EventData.GetFateDisplayName(id), $"コンテンツID：{id}", id is 1976 or 1977))
+            .ToList();
+
+        DrawAreaCatalog(
+            module,
+            "南征編",
+            "South",
+            criticalEncounters,
+            fates,
+            id => module.Config.CriticalEncountersMap.TryGetValue(id, out var enabled) && enabled,
+            module.Config.SetSouthCriticalEncounterEnabled,
+            id => module.Config.FatesMap.TryGetValue(id, out var enabled) && enabled,
+            module.Config.SetSouthFateEnabled);
+    }
+
+    public void DrawNorthConfiguration(AutomatorModule module)
+    {
+        var criticalEncounters = NorthHornContent.CriticalEncounters
+            .Select(activity => new ActivityOption(activity.Id, activity.JapaneseName, activity.Location))
+            .ToList();
+        var fates = NorthHornContent.Fates
+            .Select(activity => new ActivityOption(activity.Id, activity.JapaneseName, activity.Location, activity.IsMagicPot))
+            .ToList();
+
+        DrawAreaCatalog(
+            module,
+            "北征編",
+            "North",
+            criticalEncounters,
+            fates,
+            module.Config.IsNorthCriticalEncounterEnabled,
+            (id, enabled) => module.Config.NorthCriticalEncounters[id] = enabled,
+            module.Config.IsNorthFateEnabled,
+            (id, enabled) => module.Config.NorthFates[id] = enabled);
+    }
+
+    private static void DrawAreaCatalog(
+        AutomatorModule module,
+        string areaName,
+        string id,
+        IReadOnlyList<ActivityOption> criticalEncounters,
+        IReadOnlyList<ActivityOption> fates,
+        Func<uint, bool> isCriticalEnabled,
+        Action<uint, bool> setCriticalEnabled,
+        Func<uint, bool> isFateEnabled,
+        Action<uint, bool> setFateEnabled)
+    {
+        ImGui.TextColored(CrescentTheme.AccentSoft, $"{areaName} 自動操作対象");
+        ImGui.TextDisabled("チェックを外したコンテンツは、自動移動の対象から除外します。");
+        ImGui.Spacing();
+        if (!ImGui.BeginTabBar($"##{id}AutomationCatalog", ImGuiTabBarFlags.FittingPolicyScroll))
         {
             return;
         }
 
         var changed = false;
-        if (ImGui.BeginTabItem("CE（15件）"))
+        if (ImGui.BeginTabItem($"CE（{criticalEncounters.Count}件）"))
         {
-            changed |= DrawBulkControls("NorthCE", NorthHornContent.CriticalEncounters, module.Config.NorthCriticalEncounters);
-            changed |= DrawActivityTable(
-                "NorthCriticalEncounters",
-                NorthHornContent.CriticalEncounters,
-                module.Config.NorthCriticalEncounters,
-                module.Config.IsNorthCriticalEncounterEnabled
-            );
+            changed |= DrawBulkControls($"{id}CE", criticalEncounters, isCriticalEnabled, setCriticalEnabled);
+            changed |= DrawActivityTable($"{id}CriticalEncounters", criticalEncounters, isCriticalEnabled, setCriticalEnabled);
             ImGui.EndTabItem();
         }
 
-        if (ImGui.BeginTabItem("FATE（13件）"))
+        if (ImGui.BeginTabItem($"FATE（{fates.Count}件）"))
         {
-            changed |= DrawBulkControls("NorthFATE", NorthHornContent.Fates, module.Config.NorthFates);
-            changed |= DrawActivityTable(
-                "NorthFates",
-                NorthHornContent.Fates,
-                module.Config.NorthFates,
-                module.Config.IsNorthFateEnabled
-            );
+            changed |= DrawBulkControls($"{id}FATE", fates, isFateEnabled, setFateEnabled);
+            changed |= DrawActivityTable($"{id}Fates", fates, isFateEnabled, setFateEnabled);
             ImGui.EndTabItem();
         }
 
         ImGui.EndTabBar();
-
         if (changed)
         {
             module.PluginConfig.Save();
@@ -169,9 +271,9 @@ public class Panel
 
     private static bool DrawActivityTable(
         string id,
-        IReadOnlyList<NorthHornContent.ActivityInfo> activities,
-        IDictionary<uint, bool> settings,
-        Func<uint, bool> isEnabled)
+        IReadOnlyList<ActivityOption> activities,
+        Func<uint, bool> isEnabled,
+        Action<uint, bool> setEnabled)
     {
         var columnCount = ImGui.GetContentRegionAvail().X >= 720f ? 2 : 1;
         var flags = ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchSame;
@@ -187,20 +289,19 @@ public class Panel
             var enabled = isEnabled(activity.Id);
             if (ImGui.Checkbox($"##{id}_{activity.Id}", ref enabled))
             {
-                settings[activity.Id] = enabled;
+                setEnabled(activity.Id, enabled);
                 changed = true;
             }
 
             ImGui.SameLine();
             if (activity.IsMagicPot)
             {
-                ImGui.TextColored(CrescentTheme.Warning, "[MAGIC POT]");
+                ImGui.TextColored(CrescentTheme.Warning, "［マジックポット］");
                 ImGui.SameLine();
             }
 
-            ImGui.TextWrapped(activity.JapaneseName);
-            ImGui.TextDisabled(activity.EnglishName);
-            ImGui.TextColored(CrescentTheme.Muted, $"{activity.Location}   ID:{activity.Id}");
+            ImGui.TextWrapped(activity.Name);
+            ImGui.TextColored(CrescentTheme.Muted, $"{activity.Detail}　ID：{activity.Id}");
         }
 
         ImGui.EndTable();
@@ -209,17 +310,18 @@ public class Panel
 
     private static bool DrawBulkControls(
         string id,
-        IReadOnlyList<NorthHornContent.ActivityInfo> activities,
-        IDictionary<uint, bool> settings)
+        IReadOnlyList<ActivityOption> activities,
+        Func<uint, bool> isEnabled,
+        Action<uint, bool> setEnabled)
     {
         var changed = false;
-        ImGui.TextDisabled($"有効 {activities.Count(activity => !settings.TryGetValue(activity.Id, out var enabled) || enabled)} / {activities.Count}");
+        ImGui.TextDisabled($"有効 {activities.Count(activity => isEnabled(activity.Id))} / {activities.Count}");
         ImGui.SameLine();
         if (ImGui.SmallButton($"すべて有効##{id}"))
         {
             foreach (var activity in activities)
             {
-                settings[activity.Id] = true;
+                setEnabled(activity.Id, true);
             }
 
             changed = true;
@@ -230,7 +332,7 @@ public class Panel
         {
             foreach (var activity in activities)
             {
-                settings[activity.Id] = false;
+                setEnabled(activity.Id, false);
             }
 
             changed = true;
@@ -239,4 +341,6 @@ public class Panel
         ImGui.Spacing();
         return changed;
     }
+
+    private readonly record struct ActivityOption(uint Id, string Name, string Detail, bool IsMagicPot = false);
 }

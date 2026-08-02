@@ -53,6 +53,10 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     public int? RouteStartRemainingChestCount { get; private set; }
 
+    public int? RouteStartBronzeChestCount { get; private set; }
+
+    public int? RouteStartSilverChestCount { get; private set; }
+
     public int SurfaceOpenedThisRun { get; private set; }
 
     public bool SurfaceCountValidationCompleted { get; private set; }
@@ -81,6 +85,8 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
         }
 
         RouteStartRemainingChestCount = module.Tracker.RemainingChests;
+        RouteStartBronzeChestCount = module.Tracker.BronzeChests;
+        RouteStartSilverChestCount = module.Tracker.SilverChests;
         awaitingRouteStartCount = false;
         Svc.Log.Info($"Magi Treasuresight confirmed {RouteStartRemainingChestCount} remaining coffers at route start.");
     }
@@ -279,7 +285,7 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override string GetRouteDescription()
     {
         return ZoneData.IsInNorthHorn()
-            ? "開始時にたんきゅうしん、デミデジョン、マギ・トレジャーサーチを実行します。到達可能な地上座標だけを巡回し、南西高台は乱気流で出入りします。地下空洞は対象外です。"
+            ? "開始時にたんきゅうしん、デミデジョン、マギ・トレジャーサーチを実行します。毎回同じ固定順で地上の全座標へ接近し、宝箱が検出されなければ次の地点へ進みます。南西高台は乱気流で出入りし、地下空洞は対象外です。"
             : base.GetRouteDescription();
     }
 
@@ -290,6 +296,8 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
         countRevisionAtRouteStart = module.Tracker.CountRevision;
         awaitingRouteStartCount = true;
         RouteStartRemainingChestCount = null;
+        RouteStartBronzeChestCount = null;
+        RouteStartSilverChestCount = null;
         SurfaceOpenedThisRun = 0;
         SurfaceCountValidationCompleted = false;
     }
@@ -330,6 +338,8 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
         ExcludedUndergroundLocationCount = 0;
         awaitingRouteStartCount = false;
         RouteStartRemainingChestCount = null;
+        RouteStartBronzeChestCount = null;
+        RouteStartSilverChestCount = null;
         SurfaceOpenedThisRun = 0;
         SurfaceCountValidationCompleted = false;
     }

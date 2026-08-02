@@ -27,6 +27,7 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
     private const float CofferDetectionDistance = 12f;
     private const float CofferInteractionDistance = 2f;
     private static readonly TimeSpan CofferStationaryDelay = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan CofferOpenTimeout = TimeSpan.FromSeconds(15);
 
     private static readonly HashSet<uint> MagicPotCofferBaseIds =
     [
@@ -47,7 +48,10 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
     private DateTime hintDeadlineUtc = DateTime.MinValue;
     private DateTime nextMovementRetryUtc = DateTime.MinValue;
     private DateTime cofferStationarySinceUtc = DateTime.MinValue;
-    private uint pendingCofferEntityId;
+    private ulong pendingCofferEntityId;
+    private ulong openingCofferEntityId;
+    private DateTime openingStartedUtc = DateTime.MinValue;
+    private bool openingCastObserved;
 
     internal bool HasGuidanceBuff => Svc.Objects.LocalPlayer?.StatusList.Any(status => status.StatusId == GuidanceStatusId) == true;
 
@@ -108,6 +112,12 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
             // Chat delivery can be missed while loading or changing UI state.
             // Release the wait and safely retry the key item instead of stalling.
             awaitingHint = false;
+        }
+
+        if (openingCofferEntityId != 0)
+        {
+            UpdateCofferOpening();
+            return;
         }
 
         var coffer = FindRevealedCoffer();
@@ -377,6 +387,73 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
             return;
         }
 
+        // Magical-pot coffers use a casted interaction and cannot be opened
+        // while mounted. Keep this state entirely separate from the ordinary
+        // bronze/silver TreasureHunt interaction loop and send only once.
+        openingCofferEntityId = entityId;
+        openingStartedUtc = DateTime.UtcNow;
+        openingCastObserved = false;
+        RuntimeStatus = "マジックポットの宝箱を開封しています（詠唱完了を待機）。";
+    }
+
+    private void UpdateCofferOpening()
+    {
+        VnavmeshIpc.TryStop(vnav);
+        if (Player.Mounted)
+        {
+            Actions.Unmount.Cast();
+            RuntimeStatus = "マジックポットの宝箱を開けるためマウントから降りています。";
+            return;
+        }
+
+        var current = GameObjectInteraction.Resolve(openingCofferEntityId);
+        if (current == null || !IsValidCoffer(current))
+        {
+            CompleteCofferOpening();
+            return;
+        }
+
+        if (Svc.Objects.LocalPlayer?.IsCasting == true)
+        {
+            openingCastObserved = true;
+            RuntimeStatus = "マジックポットの宝箱を開封中です。移動せず詠唱完了を待っています。";
+            return;
+        }
+
+        var elapsed = DateTime.UtcNow - openingStartedUtc;
+        if (openingCastObserved && elapsed < TimeSpan.FromSeconds(8))
+        {
+            RuntimeStatus = "開封結果を確認しています。";
+            return;
+        }
+
+        if (elapsed < CofferOpenTimeout)
+        {
+            RuntimeStatus = "宝箱の開封詠唱開始を待っています。";
+            return;
+        }
+
+        Svc.Log.Warning("Magical-pot coffer interaction timed out; safely retrying the current coffer.");
+        openingCofferEntityId = 0;
+        openingStartedUtc = DateTime.MinValue;
+        openingCastObserved = false;
+        ResetCofferInteraction();
+        RuntimeStatus = "宝箱の開封を確認できなかったため、安全に再試行します。";
+    }
+
+    private void CompleteCofferOpening()
+    {
+        openingCofferEntityId = 0;
+        openingStartedUtc = DateTime.MinValue;
+        openingCastObserved = false;
+        pendingCofferEntityId = 0;
+        cofferStationarySinceUtc = DateTime.MinValue;
+        hints.Clear();
+        target = null;
+        awaitingHint = false;
+        hintDeadlineUtc = DateTime.MinValue;
+        nextElixirUseUtc = DateTime.UtcNow.AddSeconds(3);
+        RuntimeStatus = "マジックポットの宝箱を開封しました。";
     }
 
     private static bool IsValidCoffer(IGameObject obj)
@@ -391,6 +468,9 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
     {
         pendingCofferEntityId = 0;
         cofferStationarySinceUtc = DateTime.MinValue;
+        openingCofferEntityId = 0;
+        openingStartedUtc = DateTime.MinValue;
+        openingCastObserved = false;
     }
 
     private Vector3? InferTarget()

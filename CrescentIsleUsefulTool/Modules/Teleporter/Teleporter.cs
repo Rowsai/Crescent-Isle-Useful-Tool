@@ -59,7 +59,7 @@ public class Teleporter(TeleporterModule module)
 
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip($"Pathfind to {name}");
+            ImGui.SetTooltip($"{name}へ経路移動します");
         }
 
         if (!module.TryGetIPCSubscriber<Lifestream>(out var lifestream) || !LifestreamIpc.IsOperational(lifestream, out _))
@@ -112,15 +112,15 @@ public class Teleporter(TeleporterModule module)
 
         if (!isNearShards)
         {
-            ImGui.SetTooltip($"You must be near an aetheryte to teleport");
+            ImGui.SetTooltip("転送するには魔導通路の近くにいる必要があります");
         }
         else if (isNearCurrentShard)
         {
-            ImGui.SetTooltip($"You're already at this aetheryte");
+            ImGui.SetTooltip("すでにこの魔導通路の近くにいます");
         }
         else
         {
-            ImGui.SetTooltip($"Teleport to {aethernet.ToFriendlyString()}");
+            ImGui.SetTooltip($"{aethernet.ToFriendlyString()}へ転送します");
         }
     }
 

@@ -87,7 +87,7 @@ public class FateActivity(EventData data, Lifestream lifestream, VNavmesh vnav, 
 
     public override string GetName()
     {
-        return fate.Name;
+        return EventData.GetFateDisplayName(fate.Id, fate.Name);
     }
 
     protected override bool IsActivityTarget(IBattleNpc obj)

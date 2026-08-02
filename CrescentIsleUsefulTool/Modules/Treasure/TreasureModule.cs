@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Numerics;
+using Dalamud.Game.Text;
+using Dalamud.Game.Text.SeStringHandling;
 using Ocelot.Modules;
 using Ocelot.Windows;
 
@@ -75,6 +77,11 @@ public class TreasureModule(Plugin _plugin, Config config) : Module(_plugin, con
     {
         Hunter?.ResetForTerritoryChange();
         Tracker.ResetSession();
+    }
+
+    public override void OnChatMessage(XivChatType type, int timestamp, SeString sender, SeString message, bool isHandled)
+    {
+        Tracker.OnChatMessage(type, timestamp, sender, message, isHandled);
     }
 
     public override void Dispose()

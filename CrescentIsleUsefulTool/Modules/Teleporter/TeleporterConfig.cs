@@ -15,14 +15,14 @@ public class TeleporterConfig : ModuleConfig
     [Automation]
     [RequiredPlugin("vnavmesh")]
 
-    public bool PathToDestination { get; set; } = false;
+    public bool PathToDestination { get; set; } = true;
 
-    [Checkbox] public bool ReturnAfterFate { get; set; } = false;
+    [Checkbox] public bool ReturnAfterFate { get; set; } = true;
 
-    [Checkbox] public bool ReturnAfterCriticalEncounter { get; set; } = false;
+    [Checkbox] public bool ReturnAfterCriticalEncounter { get; set; } = true;
 
     [Checkbox]
     [RequiredPlugin("vnavmesh")]
 
-    public bool ApproachAetheryte { get; set; } = false;
+    public bool ApproachAetheryte { get; set; } = true;
 }

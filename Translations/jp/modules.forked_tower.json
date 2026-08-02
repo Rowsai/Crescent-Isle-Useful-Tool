@@ -3,42 +3,41 @@
     "forked_tower": {
       "config": {
         "big_trap_draw_color": {
-          "label": null,
-          "tooltip": null
+          "label": "大型トラップの表示色",
+          "tooltip": "大型または危険度の高いトラップに使用する色です。"
         },
         "draw_potential_trap_positions": {
-          "label": null,
-          "tooltip": null
+          "label": "トラップ候補位置を表示",
+          "tooltip": "範囲内にある既知のトラップ出現候補位置を表示します。"
         },
-        "no_traps": null,
-        "title": null,
+        "title": "フォークタワー設定",
         "trap_draw_color": {
-          "label": null,
-          "tooltip": null
+          "label": "通常トラップの表示色",
+          "tooltip": "通常トラップの表示に使用する色です。"
         },
         "trap_draw_range": {
-          "label": null,
-          "tooltip": null
+          "label": "トラップ表示距離",
+          "tooltip": "プレイヤーを中心にトラップ候補を表示する距離です。"
         },
         "draw_big_trap_range": {
-          "label": null,
-          "tooltip": null
+          "label": "大型トラップの爆発範囲を表示",
+          "tooltip": "発見済みの大型トラップに爆発範囲を表示します。範囲値は調整中です。"
         },
         "draw_outline_for_complex_mode": {
-          "label": null,
-          "tooltip": null
+          "label": "詳細表示で輪郭を描画",
+          "tooltip": "詳細表示時に輪郭を追加し、壁越しでも確認しやすくします。"
         },
         "draw_simple_mode": {
-          "label": null,
-          "tooltip": null
+          "label": "簡易表示モード",
+          "tooltip": "トラップを簡易的な輪郭表示にします。"
         },
         "draw_small_trap_range": {
-          "label": null,
-          "tooltip": null
+          "label": "小型トラップの爆発範囲を表示",
+          "tooltip": "発見済みの小型トラップに爆発範囲を表示します。範囲値は調整中です。"
         },
         "stop_rendering_complete_groups": {
-          "label": null,
-          "tooltip": null
+          "label": "確認済みグループの表示を停止",
+          "tooltip": "すべて確認済みになったトラップグループの候補位置を非表示にします。"
         }
       }
     }

@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
+using Dalamud.Game;
 using ECommons.DalamudServices;
 
 namespace CrescentIsleUsefulTool.Modules.Fates;
@@ -77,7 +78,7 @@ public class Fate
 
     private static string ResolveName(uint id, string fallback)
     {
-        var sheet = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Fate>();
+        var sheet = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Fate>(ClientLanguage.Japanese);
         if (sheet.TryGetRow(id, out var row))
         {
             var name = row.Name.ToString();
