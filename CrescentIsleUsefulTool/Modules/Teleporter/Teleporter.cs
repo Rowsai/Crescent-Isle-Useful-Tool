@@ -6,6 +6,8 @@ using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
 using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules.StateManager;
+using CrescentIsleUsefulTool.Modules.MagicPot;
+using CrescentIsleUsefulTool.Modules.Treasure;
 using Dalamud.Interface;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
@@ -27,8 +29,16 @@ public class Teleporter(TeleporterModule module)
     private ReturnChain? activeCompletionReturnChain;
     private DateTime completionReturnStartedUtc = DateTime.MinValue;
     private DateTime nextCompletionReturnAttemptUtc = DateTime.MinValue;
+    private DateTime completionLastProgressUtc = DateTime.MinValue;
+    private Vector3 completionLastPosition;
+    private float completionLastChainProgress;
+    private string completionLastStep = "";
+    private int completionReturnAttempts;
+    private string completionReturnStatus = "帰還処理は待機中です。";
 
     public bool IsCompletionReturnPending => completionReturnRequested || completionReturnInProgress;
+
+    public string CompletionReturnStatus => activeCompletionReturnChain?.CurrentStatus ?? completionReturnStatus;
 
     public void Button(Aethernet? aethernet, Vector3 destination, string name, string id, EventData ev)
     {
@@ -159,9 +169,24 @@ public class Teleporter(TeleporterModule module)
         {
             Svc.Log.Info($"{reason}: mandatory Demi-Déjion return requested.");
             completionDemiReturnCompleted = false;
+            completionReturnAttempts = 0;
+            completionReturnStatus = "完了したアクティビティの移動を停止し、帰還を準備しています。";
         }
 
         completionReturnRequested = true;
+
+        if (module.TryGetModule<TreasureModule>(out var treasure) && treasure?.Hunter.IsRunning == true)
+        {
+            treasure.Hunter.PauseForConflictingMode(
+                "FATE・CE完了後の必須帰還を優先するため、トレジャーハンターを一時停止しました。");
+        }
+
+        if (IsMagicPotTreasureSearchActive())
+        {
+            completionReturnStatus = "マジックポットの宝箱探索完了後に、必須帰還を再開します。";
+            return true;
+        }
+
         TryStartCompletionReturn();
         return true;
     }
@@ -172,6 +197,7 @@ public class Teleporter(TeleporterModule module)
         {
             completionReturnInProgress = false;
             activeCompletionReturnChain = null;
+            completionReturnStatus = "帰還処理は待機中です。";
             return;
         }
 
@@ -179,7 +205,34 @@ public class Teleporter(TeleporterModule module)
         {
             completionReturnRequested = false;
             completionReturnInProgress = false;
+            completionReturnStatus = "現在のエリアでは帰還処理を実行できません。";
             return;
+        }
+
+        // Guidance is awarded by the pot FATE itself. Returning immediately
+        // would destroy that treasure-search flow, so retain the mandatory
+        // request but suspend its chain until the separate hunt is finished.
+        if (IsMagicPotTreasureSearchActive())
+        {
+            if (completionReturnInProgress)
+            {
+                SuspendCompletionReturnForMagicPot();
+            }
+            else
+            {
+                completionReturnStatus = "マジックポットの宝箱探索完了後に、必須帰還を再開します。";
+            }
+
+            return;
+        }
+
+        if (completionReturnInProgress)
+        {
+            UpdateCompletionProgress();
+            if (DateTime.UtcNow - completionLastProgressUtc > TimeSpan.FromSeconds(35))
+            {
+                ScheduleCompletionRetry("帰還処理が35秒進まなかったため、安全に再試行します。");
+            }
         }
 
         // ChainQueue.Abort disposes callbacks immediately, so detect an
@@ -189,10 +242,7 @@ public class Teleporter(TeleporterModule module)
             !Plugin.Chain.IsRunning &&
             Plugin.Chain.QueueCount == 0)
         {
-            completionDemiReturnCompleted |= activeCompletionReturnChain?.PerformedDemiReturn == true;
-            activeCompletionReturnChain = null;
-            completionReturnInProgress = false;
-            nextCompletionReturnAttemptUtc = DateTime.UtcNow.AddSeconds(1);
+            ScheduleCompletionRetry("帰還チェーンが中断されたため再試行します。");
         }
 
         TryStartCompletionReturn();
@@ -207,13 +257,21 @@ public class Teleporter(TeleporterModule module)
 
         if (!module.TryGetIPCSubscriber<VNavmesh>(out var vnav) || !VnavmeshIpc.IsOperational(vnav, out _))
         {
+            completionReturnStatus = "vnavmeshの準備完了後に帰還を再開します。";
             nextCompletionReturnAttemptUtc = DateTime.UtcNow.AddSeconds(1);
             return;
         }
 
         completionReturnInProgress = true;
+        completionReturnAttempts++;
         completionReturnStartedUtc = DateTime.UtcNow;
+        completionLastProgressUtc = DateTime.UtcNow;
+        completionLastPosition = Player.Position;
+        completionLastChainProgress = 0f;
+        completionLastStep = "";
+        completionReturnStatus = $"帰還処理を開始しています（試行 {completionReturnAttempts}）。";
         Plugin.Chain.Abort();
+        VnavmeshIpc.TryCancelAllPathfinds(vnav);
         VnavmeshIpc.TryStop(vnav);
         var returnChain = new ReturnChain(module, new ReturnChainConfig
         {
@@ -225,6 +283,7 @@ public class Teleporter(TeleporterModule module)
             UpdateTreasureCount = true,
         });
         activeCompletionReturnChain = returnChain;
+        Svc.Log.Info($"Mandatory activity completion return started (attempt {completionReturnAttempts}).");
         Plugin.Chain.Submit(() => Chain.Create("MandatoryActivityCompletionReturn")
             .Then(returnChain)
             .OnComplete(() =>
@@ -235,15 +294,81 @@ public class Teleporter(TeleporterModule module)
                 if (returnChain.IsComplete())
                 {
                     completionReturnRequested = false;
+                    completionReturnAttempts = 0;
+                    completionReturnStatus = "拠点への帰還が完了しました。";
                     Svc.Log.Info("Mandatory activity completion return finished.");
                 }
                 else
                 {
                     nextCompletionReturnAttemptUtc = DateTime.UtcNow.AddSeconds(1);
+                    completionReturnStatus = "帰還処理を完了できなかったため再試行します。";
                     Svc.Log.Warning("Mandatory activity completion return did not finish; retrying.");
                 }
             })
             .OnFinally(() => completionReturnInProgress = false));
+    }
+
+    private void UpdateCompletionProgress()
+    {
+        var step = activeCompletionReturnChain?.CurrentStatus ?? "";
+        var chainProgress = Plugin.Chain.CurrentChain?.Progress ?? completionLastChainProgress;
+        var position = Player.Position;
+        var inAreaTransition = Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.BetweenAreas] ||
+                               Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.BetweenAreas51];
+
+        if (!string.Equals(step, completionLastStep, StringComparison.Ordinal) ||
+            Math.Abs(chainProgress - completionLastChainProgress) >= 0.01f ||
+            Vector3.Distance(position, completionLastPosition) >= 1.5f ||
+            Player.IsCasting ||
+            inAreaTransition)
+        {
+            completionLastStep = step;
+            completionLastChainProgress = chainProgress;
+            completionLastPosition = position;
+            completionLastProgressUtc = DateTime.UtcNow;
+        }
+    }
+
+    private void ScheduleCompletionRetry(string reason)
+    {
+        completionDemiReturnCompleted |= activeCompletionReturnChain?.PerformedDemiReturn == true;
+        activeCompletionReturnChain = null;
+        completionReturnInProgress = false;
+        completionReturnStatus = reason;
+        nextCompletionReturnAttemptUtc = DateTime.UtcNow.AddSeconds(1);
+
+        if (module.TryGetIPCSubscriber<VNavmesh>(out var vnav))
+        {
+            VnavmeshIpc.TryCancelAllPathfinds(vnav);
+            VnavmeshIpc.TryStop(vnav);
+        }
+
+        Plugin.Chain.Abort();
+        Svc.Log.Warning(reason);
+    }
+
+    private bool IsMagicPotTreasureSearchActive()
+    {
+        return module.TryGetModule<MagicPotModule>(out var magicPot) &&
+               magicPot?.IsTreasureSearchActive == true;
+    }
+
+    private void SuspendCompletionReturnForMagicPot()
+    {
+        completionDemiReturnCompleted |= activeCompletionReturnChain?.PerformedDemiReturn == true;
+        activeCompletionReturnChain = null;
+        completionReturnInProgress = false;
+        completionReturnStatus = "マジックポットの宝箱探索完了後に、必須帰還を再開します。";
+        nextCompletionReturnAttemptUtc = DateTime.UtcNow.AddSeconds(1);
+
+        if (module.TryGetIPCSubscriber<VNavmesh>(out var vnav))
+        {
+            VnavmeshIpc.TryCancelAllPathfinds(vnav);
+            VnavmeshIpc.TryStop(vnav);
+        }
+
+        Plugin.Chain.Abort();
+        Svc.Log.Info("Mandatory completion return suspended for the active Magic Pot treasure search.");
     }
 
     public void Return()

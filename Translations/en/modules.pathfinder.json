@@ -18,7 +18,7 @@
         },
         "max_level": {
           "label": "Max area level",
-          "tooltip": "The maximum level of mobs near which you are willing to hunt for objects."
+          "tooltip": "Set from 1 to 47. Treasure and carrot routes avoid approaching nearby enemies above this level."
         }
       }
     }

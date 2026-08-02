@@ -26,6 +26,8 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
     public bool PerformedDemiReturn => performedDemiReturn;
 
+    public string CurrentStatus { get; private set; } = "帰還処理を準備しています。";
+
     protected override Chain Create(Chain chain)
     {
         chain.BreakIf(() => Player.IsDead);
@@ -40,6 +42,9 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         {
             shouldReturn = ShouldUseDemiReturn();
             movementBlocksReturn = shouldReturn && VnavmeshIpc.IsMovementActive(vnav);
+            CurrentStatus = shouldReturn
+                ? "デミデジョンの実行条件を確認しています。"
+                : "拠点内からナレッジクリスタルとエーテライトを確認しています。";
             if (movementBlocksReturn)
             {
                 Svc.Log.Info(config.WaitForStationaryDemiReturn
@@ -52,19 +57,25 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
             () => CreateDemiReturnChain(vnav)
         );
 
+        chain.Then(_ => CurrentStatus = "マギ・トレジャーサーチの更新を確認しています。");
         chain.Then(ChainHelper.TreasureSightChain(config.UpdateTreasureCount));
         // Every successful Demi-Déjion performs the たんきゅうしん check.
         // ApplyBuffs remains useful for callers already at camp, but can no
         // longer suppress this post-return safety check.
         chain.ConditionalThen(
             _ => config.ApplyBuffs || config.ForceTankyushin || performedDemiReturn,
-            () => ApplyBuffs(config.ForceTankyushin));
+            () =>
+            {
+                CurrentStatus = "ナレッジクリスタル付近でバフを確認しています。";
+                return ApplyBuffs(config.ForceTankyushin);
+            });
 
         if (config.ApproachAetheryte)
         {
             var lifestream = module.GetIPCSubscriber<Lifestream>();
             var position = GetAetherytePosition();
 
+            chain.Then(_ => CurrentStatus = "拠点エーテライト付近へ移動しています。");
             chain.Then(new PathfindAndMoveToChain(vnav, GetAetherytePosition()));
             chain.Then(_ =>
                 LifestreamIpc.TryGetActiveCustomAetheryte(lifestream, out var active) &&
@@ -74,7 +85,11 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         }
 
 
-        return chain.Then(_ => complete = true);
+        return chain.Then(_ =>
+        {
+            CurrentStatus = "拠点への帰還が完了しました。";
+            complete = true;
+        });
     }
 
     private Chain CreateDemiReturnChain(VNavmesh vnav)
@@ -82,6 +97,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         var returnRequestedAtUtc = DateTime.MinValue;
         var lastActionRequestUtc = DateTime.MinValue;
         var castFinishedAtUtc = DateTime.MinValue;
+        var nextCombatMoveRetryUtc = DateTime.MinValue;
         var castStarted = false;
         var sawBetweenAreas = false;
 
@@ -93,6 +109,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                                    Svc.Condition[ConditionFlag.BetweenAreas51];
                 if (betweenAreas)
                 {
+                    CurrentStatus = "デミデジョンによるエリア移動を確認しています。";
                     sawBetweenAreas = true;
                     return false;
                 }
@@ -108,6 +125,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                 // here and keep retrying instead of timing out after one cast.
                 if (Svc.Condition[ConditionFlag.Mounted])
                 {
+                    CurrentStatus = "デミデジョン実行のためマウントを降りています。";
                     if (DateTime.UtcNow - lastActionRequestUtc >= TimeSpan.FromSeconds(1))
                     {
                         Actions.TryUnmount();
@@ -119,11 +137,26 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
                 if (Svc.Condition[ConditionFlag.InCombat])
                 {
+                    CurrentStatus = "戦闘解除のため最寄りの魔導通路方向へ退避しています。";
+                    if (DateTime.UtcNow >= nextCombatMoveRetryUtc &&
+                        !VnavmeshIpc.IsMovementActive(vnav))
+                    {
+                        var escape = AethernetData.AllByDistance().FirstOrDefault()?.Position ?? GetAetherytePosition();
+                        if (Player.DistanceTo(escape) <= 8f)
+                        {
+                            escape = GetAetherytePosition();
+                        }
+
+                        VnavmeshIpc.TryPathfindAndMoveTo(vnav, escape, false);
+                        nextCombatMoveRetryUtc = DateTime.UtcNow.AddSeconds(2);
+                    }
+
                     return false;
                 }
 
                 if (VnavmeshIpc.IsMovementActive(vnav))
                 {
+                    CurrentStatus = "移動を停止してデミデジョンを準備しています。";
                     VnavmeshIpc.TryStop(vnav);
                     return false;
                 }
@@ -133,6 +166,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                     if (returnRequestedAtUtc != DateTime.MinValue)
                     {
                         castStarted = true;
+                        CurrentStatus = "デミデジョンを詠唱しています。";
                     }
 
                     return false;
@@ -168,6 +202,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                     DateTime.UtcNow - lastActionRequestUtc >= TimeSpan.FromSeconds(1))
                 {
                     Actions.Return.Cast();
+                    CurrentStatus = "デミデジョンを要求しました。詠唱開始を確認しています。";
                     returnRequestedAtUtc = DateTime.UtcNow;
                     lastActionRequestUtc = DateTime.UtcNow;
                     Svc.Log.Info("Demi-Déjion cast requested.");

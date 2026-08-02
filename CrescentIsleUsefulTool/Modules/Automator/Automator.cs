@@ -12,11 +12,14 @@ using CrescentIsleUsefulTool.Modules.Fates;
 using CrescentIsleUsefulTool.Modules.MagicPot;
 using CrescentIsleUsefulTool.Modules.StateManager;
 using CrescentIsleUsefulTool.Modules.Teleporter;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
+using ECommons.GameHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using Ocelot.Chain;
 using Ocelot.IPC;
+using TeleporterController = CrescentIsleUsefulTool.Modules.Teleporter.Teleporter;
 
 namespace CrescentIsleUsefulTool.Modules.Automator;
 
@@ -35,6 +38,26 @@ public class Automator
     private double idleTime = 0;
 
     private bool waitingForMagicPot;
+
+    private Activity? watchedActivity;
+
+    private ActivityState watchedActivityState;
+
+    private Vector3 lastActivityPosition;
+
+    private float lastActivityDistance = float.MaxValue;
+
+    private DateTime lastActivityProgressUtc = DateTime.MinValue;
+
+    private int activityRecoveryAttempts;
+
+    private readonly Dictionary<string, DateTime> activityCooldowns = [];
+
+    private DateTime idleCombatLastProgressUtc = DateTime.MinValue;
+
+    private DateTime nextIdleCombatRepathUtc = DateTime.MinValue;
+
+    private Vector3 idleCombatLastPosition;
 
     public bool IsWaitingForMagicPot => waitingForMagicPot;
 
@@ -106,7 +129,12 @@ public class Automator
         // the base aetheryte.
         if (teleporter.IsCompletionReturnPending)
         {
-            SetRuntimeStatus("完了したFATE・CEからデミデジョンで拠点へ帰還しています。");
+            SetRuntimeStatus(teleporter.CompletionReturnStatus);
+            return;
+        }
+
+        if (Activity != null && UpdateActivityProgressWatchdog(module, lifestream, vnav, teleporter))
+        {
             return;
         }
 
@@ -118,6 +146,7 @@ public class Automator
                 waitingForMagicPot = true;
                 Activity = null;
                 idleTime = 0;
+                ResetActivityWatchdog();
                 Plugin.Chain.Abort();
                 VnavmeshIpc.TryStop(vnav);
                 if (module.Config.ShouldToggleAiProvider)
@@ -141,9 +170,11 @@ public class Automator
         {
             if (states.GetState() == State.InCombat)
             {
-                SetRuntimeStatus("戦闘状態の終了を待っています。");
+                RecoverFromIdleCombat(vnav);
                 return;
             }
+
+            ResetIdleCombatRecovery();
 
             if (states.GetState() == State.InCriticalEncounter)
             {
@@ -269,7 +300,7 @@ public class Automator
         }
     }
 
-    private static CriticalEncounter? FindCriticalEncounter(AutomatorModule module, Lifestream lifestream, VNavmesh vnav)
+    private CriticalEncounter? FindCriticalEncounter(AutomatorModule module, Lifestream lifestream, VNavmesh vnav)
     {
         if (!module.TryGetModule<CriticalEncountersModule>(out var source) || source == null)
         {
@@ -279,6 +310,11 @@ public class Automator
         foreach (var encounter in source.CriticalEncounters.Values)
         {
             if (!IsCriticalEncounterEnabled(module, encounter.DynamicEventId))
+            {
+                continue;
+            }
+
+            if (IsActivityCoolingDown(EventType.CriticalEncounter, encounter.DynamicEventId))
             {
                 continue;
             }
@@ -294,7 +330,7 @@ public class Automator
         return null;
     }
 
-    private static Activity? FindActivityByPriority(AutomatorModule module, Lifestream lifestream, VNavmesh vnav)
+    private Activity? FindActivityByPriority(AutomatorModule module, Lifestream lifestream, VNavmesh vnav)
     {
         foreach (var priority in module.Config.GetPriorityOrder())
         {
@@ -318,7 +354,7 @@ public class Automator
         return null;
     }
 
-    private static FateActivity? FindFate(
+    private FateActivity? FindFate(
         AutomatorModule module,
         Lifestream lifestream,
         VNavmesh vnav,
@@ -343,6 +379,11 @@ public class Automator
             }
 
             if (!IsFateEnabled(module, fate.Id))
+            {
+                continue;
+            }
+
+            if (IsActivityCoolingDown(EventType.Fate, fate.Id))
             {
                 continue;
             }
@@ -404,6 +445,183 @@ public class Automator
                module.Config.IsNorthFateEnabled(fateId);
     }
 
+    private bool UpdateActivityProgressWatchdog(
+        AutomatorModule module,
+        Lifestream lifestream,
+        VNavmesh vnav,
+        TeleporterController teleporter)
+    {
+        var activity = Activity;
+        if (activity == null)
+        {
+            ResetActivityWatchdog();
+            return false;
+        }
+
+        if (!ReferenceEquals(watchedActivity, activity))
+        {
+            watchedActivity = activity;
+            watchedActivityState = activity.state;
+            lastActivityPosition = Player.Position;
+            lastActivityDistance = activity.DistanceToDestination();
+            lastActivityProgressUtc = DateTime.UtcNow;
+            activityRecoveryAttempts = 0;
+            return false;
+        }
+
+        if (watchedActivityState != activity.state)
+        {
+            watchedActivityState = activity.state;
+            lastActivityPosition = Player.Position;
+            lastActivityDistance = activity.DistanceToDestination();
+            lastActivityProgressUtc = DateTime.UtcNow;
+        }
+
+        if (activity.state != ActivityState.Pathfinding)
+        {
+            return false;
+        }
+
+        var inAreaTransition = Svc.Condition[ConditionFlag.BetweenAreas] ||
+                               Svc.Condition[ConditionFlag.BetweenAreas51];
+        if (inAreaTransition || Player.IsCasting ||
+            (LifestreamIpc.TryIsBusy(lifestream, out var lifestreamBusy) && lifestreamBusy))
+        {
+            lastActivityProgressUtc = DateTime.UtcNow;
+            return false;
+        }
+
+        var position = Player.Position;
+        var distance = activity.DistanceToDestination();
+        if (Vector3.Distance(position, lastActivityPosition) >= 1.5f ||
+            distance <= lastActivityDistance - 1f)
+        {
+            lastActivityPosition = position;
+            lastActivityDistance = distance;
+            lastActivityProgressUtc = DateTime.UtcNow;
+            return false;
+        }
+
+        if (DateTime.UtcNow - lastActivityProgressUtc <= TimeSpan.FromSeconds(20))
+        {
+            return false;
+        }
+
+        activityRecoveryAttempts++;
+        VnavmeshIpc.TryCancelAllPathfinds(vnav);
+        VnavmeshIpc.TryStop(vnav);
+        LifestreamIpc.TryAbort(lifestream);
+        Plugin.Chain.Abort();
+
+        if (activityRecoveryAttempts >= 3)
+        {
+            var key = GetActivityKey(activity.data.Type, activity.data.Id);
+            activityCooldowns[key] = DateTime.UtcNow.AddMinutes(1);
+            var name = activity.GetName();
+            Activity = null;
+            idleTime = 0;
+            ResetActivityWatchdog();
+            if (module.Config.ShouldToggleAiProvider)
+            {
+                module.Config.AiProvider.Off();
+            }
+
+            teleporter.RequestMandatoryCompletionReturn($"{name}への移動が3回停止");
+            SetRuntimeStatus($"{name}への移動を一時除外し、拠点へ復帰します。");
+            Svc.Log.Warning($"Automation travel stalled three times; {name} is cooling down for 1 minute.");
+            return true;
+        }
+
+        activity.ResetPathfindingForRecovery();
+        lastActivityPosition = Player.Position;
+        lastActivityDistance = activity.DistanceToDestination();
+        lastActivityProgressUtc = DateTime.UtcNow;
+        SetRuntimeStatus($"{activity.GetName()}への移動停止を検知し、経路を再作成します（{activityRecoveryAttempts}/3）。");
+        Svc.Log.Warning($"Automation travel stalled; rebuilding route ({activityRecoveryAttempts}/3) for {activity.GetName()}.");
+        return true;
+    }
+
+    private void RecoverFromIdleCombat(VNavmesh vnav)
+    {
+        var now = DateTime.UtcNow;
+        var position = Player.Position;
+        if (idleCombatLastProgressUtc == DateTime.MinValue)
+        {
+            idleCombatLastProgressUtc = now;
+            idleCombatLastPosition = position;
+            nextIdleCombatRepathUtc = DateTime.MinValue;
+        }
+
+        if (Vector3.Distance(position, idleCombatLastPosition) >= 1.5f)
+        {
+            idleCombatLastPosition = position;
+            idleCombatLastProgressUtc = now;
+        }
+
+        var movementStalled = now - idleCombatLastProgressUtc >= TimeSpan.FromSeconds(8);
+        if (now >= nextIdleCombatRepathUtc &&
+            (!VnavmeshIpc.IsMovementActive(vnav) || movementStalled))
+        {
+            if (movementStalled)
+            {
+                VnavmeshIpc.TryCancelAllPathfinds(vnav);
+                VnavmeshIpc.TryStop(vnav);
+            }
+
+            var destination = AethernetData.AllByDistance().FirstOrDefault()?.Position;
+            var baseCamp = (ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp).GetData();
+            if (destination == null || Vector3.Distance(position, destination.Value) <= 8f)
+            {
+                destination = baseCamp.Position;
+            }
+
+            VnavmeshIpc.TryPathfindAndMoveTo(vnav, destination.Value, false);
+            idleCombatLastPosition = position;
+            idleCombatLastProgressUtc = now;
+            nextIdleCombatRepathUtc = now.AddSeconds(2);
+        }
+
+        SetRuntimeStatus("戦闘解除のため最寄りの魔導通路方向へ退避しています。");
+    }
+
+    private void ResetIdleCombatRecovery()
+    {
+        idleCombatLastProgressUtc = DateTime.MinValue;
+        nextIdleCombatRepathUtc = DateTime.MinValue;
+        idleCombatLastPosition = Vector3.Zero;
+    }
+
+    private bool IsActivityCoolingDown(EventType type, uint id)
+    {
+        var key = GetActivityKey(type, id);
+        if (!activityCooldowns.TryGetValue(key, out var until))
+        {
+            return false;
+        }
+
+        if (until > DateTime.UtcNow)
+        {
+            return true;
+        }
+
+        activityCooldowns.Remove(key);
+        return false;
+    }
+
+    private static string GetActivityKey(EventType type, uint id)
+    {
+        return $"{type}:{id}";
+    }
+
+    private void ResetActivityWatchdog()
+    {
+        watchedActivity = null;
+        lastActivityPosition = default;
+        lastActivityDistance = float.MaxValue;
+        lastActivityProgressUtc = DateTime.MinValue;
+        activityRecoveryAttempts = 0;
+    }
+
     private void CompleteActivity(Activity completedActivity, AutomatorModule module, VNavmesh vnav)
     {
         Plugin.Chain.Abort();
@@ -415,6 +633,7 @@ public class Automator
 
         Activity = null;
         idleTime = 0;
+        ResetActivityWatchdog();
 
         var name = string.IsNullOrWhiteSpace(completedActivity.data.InternalName)
             ? "Activity"
@@ -517,7 +736,7 @@ public class Automator
         {
             return
             [
-                "移動を停止してデミデジョンを実行",
+                teleporter.CompletionReturnStatus,
                 "拠点への帰還を確認",
                 "マギ・トレジャーサーチで残数を更新",
                 "必要ならたんきゅうしんでバフを更新",
@@ -575,5 +794,6 @@ public class Automator
         Activity = null;
         idleTime = 0;
         waitingForMagicPot = false;
+        ResetActivityWatchdog();
     }
 }

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Ipc;
+using CrescentIsleUsefulTool.Modules.Treasure;
 using ECommons.DalamudServices;
 using Ocelot;
 using Ocelot.IPC;
@@ -79,6 +80,12 @@ public class AutomatorModule : Module
 
     public void EnableAutomationMode()
     {
+        if (TryGetModule<TreasureModule>(out var treasure) && treasure?.Hunter.IsRunning == true)
+        {
+            treasure.Hunter.PauseForConflictingMode(
+                "自動操作モードを開始したため、トレジャーハンターを一時停止しました。");
+        }
+
         var wasDisabled = !Config.Enabled;
         Config.Enabled = true;
         automator.Refresh();

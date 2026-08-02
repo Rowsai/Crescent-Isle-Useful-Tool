@@ -11,8 +11,10 @@ using CrescentIsleUsefulTool.Enums;
 using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules;
 using CrescentIsleUsefulTool.Modules.Automator;
+using CrescentIsleUsefulTool.Modules.MagicPot;
 using CrescentIsleUsefulTool.Modules.Pathfinder;
 using CrescentIsleUsefulTool.Modules.StateManager;
+using CrescentIsleUsefulTool.Modules.Teleporter;
 using CrescentIsleUsefulTool.Ui;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.Automation.NeoTaskManager;
@@ -72,6 +74,12 @@ public abstract class Hunter
 
     private int reachablePathFollowFailures;
 
+    private List<Vector3> activeMovementPath = [];
+
+    private int activeMovementPathStepIndex = -1;
+
+    private string unsafeEnemyDescription = "上限を超える敵";
+
     private int movementProgressStepIndex = -1;
 
     private Vector3 lastMovementPosition;
@@ -93,6 +101,10 @@ public abstract class Hunter
     private readonly Dictionary<string, int> routeRecoveryAttempts = [];
 
     private bool HasPausedProgress => !running && Steps.Count > 0 && stepIndex < Steps.Count;
+
+    public bool IsRunning => running;
+
+    public string RuntimeStatus => runtimeStatus;
 
     protected PathfinderStep CurrentStep
     {
@@ -276,7 +288,12 @@ public abstract class Hunter
                     .Then(new TaskManagerTask(() => pathfinder?.State == PathfinderState.FileLoaded))
                     .Then(_ => steps = pathfinder.FindPath(Player.Position, valid))
                     .Then(new TaskManagerTask(() => steps!.IsCompleted))
-                    .Then(_ => Steps = steps!.Result)
+                    .Then(_ =>
+                    {
+                        Steps = steps!.Result;
+                        stepIndex = 0;
+                        ResetMovementValidation();
+                    })
                     .Then(_ =>
                     {
                         var options = new JsonSerializerOptions
@@ -362,6 +379,20 @@ public abstract class Hunter
                 }
                 else
                 {
+                    if (ownerModule.TryGetModule<TeleporterModule>(out var teleporter) &&
+                        teleporter?.teleporter.IsCompletionReturnPending == true)
+                    {
+                        runtimeStatus = "FATE・CE完了後の拠点帰還が完了してから開始できます。";
+                        return;
+                    }
+
+                    if (ownerModule.TryGetModule<MagicPotModule>(out var magicPot) &&
+                        magicPot?.IsTreasureSearchActive == true)
+                    {
+                        runtimeStatus = "マジックポットの宝箱探索が完了してから開始できます。";
+                        return;
+                    }
+
                     if (ownerModule.TryGetModule<AutomatorModule>(out var automator) && automator?.Config.Enabled == true)
                     {
                         automator.DisableAutomationMode();
@@ -376,6 +407,8 @@ public abstract class Hunter
                         pathfinder = null;
                     }
 
+                    ResetMovementValidation();
+                    StepProcessor.Abort();
                     running = true;
                     OnHuntStarted(isResuming);
                     if (isResuming)
@@ -480,6 +513,18 @@ public abstract class Hunter
         ResetProgress();
     }
 
+    public void PauseForConflictingMode(string reason)
+    {
+        if (!running)
+        {
+            return;
+        }
+
+        Pause();
+        runtimeStatus = reason;
+        Svc.Log.Warning(reason);
+    }
+
     private void Pause()
     {
         stopwatch.Stop();
@@ -531,12 +576,23 @@ public abstract class Hunter
             : null;
         var movementDestination = obj?.Position ?? destination;
 
+        if (TryGetUnsafeEnemyOnCurrentRoute(movementDestination, out var unsafeEnemy))
+        {
+            MarkCurrentStepUnreachable(unsafeEnemy);
+            return true;
+        }
+
         distance = Player.DistanceTo(movementDestination);
 
         VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
         if (!isRunning)
         {
             var movementState = StartReachableMovement(movementDestination);
+            if (movementState == ReachableMovementState.UnsafeEnemy)
+            {
+                MarkCurrentStepUnreachable($"{unsafeEnemyDescription}が経路上にいるため、この宝箱座標へは近づきません。");
+                return true;
+            }
             if (movementState == ReachableMovementState.Unreachable)
             {
                 MarkCurrentStepUnreachable("ナビメッシュ上で到達できない宝箱座標をスキップしました。");
@@ -580,15 +636,26 @@ public abstract class Hunter
 
     private bool ReturnToBaseCampHandler()
     {
-        distance = 0;
         var inCombat = states.GetState() == State.InCombat;
         var baseCamp = ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp;
+        distance = Player.DistanceTo(baseCamp.GetData().Position);
 
         // If we are in combat, start running back to the base camp so we can escape combat
         VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
         if (inCombat && !isRunning)
         {
             VnavmeshIpc.TryPathfindAndMoveTo(vnav, baseCamp.GetData().Position, false);
+            ResetMovementProgress(distance);
+            return false;
+        }
+
+        if (inCombat && HasMovementStalled(distance))
+        {
+            VnavmeshIpc.TryCancelAllPathfinds(vnav);
+            VnavmeshIpc.TryStop(vnav);
+            ResetMovementProgress(distance);
+            runtimeStatus = "戦闘解除中の移動停止を検知したため、ベースキャンプへの経路を再作成します。";
+            Svc.Log.Warning(runtimeStatus);
             return false;
         }
 
@@ -619,6 +686,12 @@ public abstract class Hunter
     {
         var destination = CurrentStep.Aethernet.GetData().Position;
 
+        if (TryGetUnsafeEnemyOnCurrentRoute(destination, out var unsafeEnemy))
+        {
+            MarkCurrentStepUnreachable(unsafeEnemy);
+            return true;
+        }
+
         distance = Player.DistanceTo(destination);
         if (distance <= 4f)
         {
@@ -631,6 +704,11 @@ public abstract class Hunter
         if (!isRunning)
         {
             var movementState = StartReachableMovement(destination);
+            if (movementState == ReachableMovementState.UnsafeEnemy)
+            {
+                MarkCurrentStepUnreachable($"{unsafeEnemyDescription}が経路上にいるため、この魔導通路へは近づきません。");
+                return true;
+            }
             if (movementState == ReachableMovementState.Unreachable)
             {
                 MarkCurrentStepUnreachable("魔導通路まで到達できないため、この移動区間を中止しました。");
@@ -670,6 +748,12 @@ public abstract class Hunter
     {
         var trigger = CurrentStep.Position;
         var arrival = CurrentStep.ArrivalPosition;
+
+        if (TryGetUnsafeEnemyOnCurrentRoute(trigger, out var unsafeEnemy))
+        {
+            MarkCurrentStepUnreachable(unsafeEnemy);
+            return true;
+        }
         distance = Player.DistanceTo(trigger);
 
         if (HasReachedTurbulenceArrival(arrival))
@@ -682,6 +766,11 @@ public abstract class Hunter
         if (!isRunning)
         {
             var movementState = StartReachableMovement(trigger);
+            if (movementState == ReachableMovementState.UnsafeEnemy)
+            {
+                MarkCurrentStepUnreachable($"{unsafeEnemyDescription}が経路上にいるため、この乱気流へは近づきません。");
+                return true;
+            }
             if (movementState == ReachableMovementState.Unreachable)
             {
                 MarkCurrentStepUnreachable("乱気流まで到達できないため、この経路をスキップしました。");
@@ -768,6 +857,13 @@ public abstract class Hunter
             return ReachableMovementState.Unreachable;
         }
 
+        activeMovementPath = path;
+        activeMovementPathStepIndex = stepIndex;
+        if (TryGetUnsafeEnemyOnCurrentRoute(destination, out _))
+        {
+            return ReachableMovementState.UnsafeEnemy;
+        }
+
         if (!VnavmeshIpc.TryFollowPath(vnav, path, false))
         {
             reachablePathFollowFailures++;
@@ -783,6 +879,56 @@ public abstract class Hunter
             ResetMovementProgress();
         }
         return ReachableMovementState.Started;
+    }
+
+    private bool TryGetUnsafeEnemyOnCurrentRoute(Vector3 destination, out string message)
+    {
+        message = "";
+        if (activeMovementPathStepIndex != stepIndex || activeMovementPath.Count == 0)
+        {
+            return false;
+        }
+
+        var position = Player.Position;
+        var closestPathIndex = 0;
+        var closestPathDistance = float.MaxValue;
+        for (var index = 0; index < activeMovementPath.Count; index++)
+        {
+            var candidateDistance = Vector3.DistanceSquared(position, activeMovementPath[index]);
+            if (candidateDistance < closestPathDistance)
+            {
+                closestPathDistance = candidateDistance;
+                closestPathIndex = index;
+            }
+        }
+
+        var futurePath = activeMovementPath.Skip(closestPathIndex).Append(destination).ToArray();
+        foreach (var enemy in TargetHelper.Enemies.Where(enemy =>
+                     enemy.IsValid() &&
+                     enemy.IsTargetable &&
+                     !enemy.IsDead &&
+                     enemy.Level > config.MaxLevel))
+        {
+            var currentDistance = Vector3.Distance(position, enemy.Position);
+            var futureDistance = futurePath.Min(point => Vector3.Distance(point, enemy.Position));
+            const float avoidanceRadius = 25f;
+            if (futureDistance >= avoidanceRadius || futureDistance >= currentDistance - 1f)
+            {
+                continue;
+            }
+
+            var enemyName = enemy.Name.TextValue;
+            if (string.IsNullOrWhiteSpace(enemyName))
+            {
+                enemyName = "敵";
+            }
+
+            unsafeEnemyDescription = $"Lv.{enemy.Level} {enemyName}";
+            message = $"{unsafeEnemyDescription}を経路上に検知しました。最大エリアレベル Lv.{config.MaxLevel} を超えるため近づきません。";
+            return true;
+        }
+
+        return false;
     }
 
     private bool HasMovementStalled(float currentDistance)
@@ -881,6 +1027,9 @@ public abstract class Hunter
         reachablePathEndpoint = default;
         reachablePathRequestedAtUtc = DateTime.MinValue;
         reachablePathFollowFailures = 0;
+        activeMovementPath.Clear();
+        activeMovementPathStepIndex = -1;
+        unsafeEnemyDescription = "上限を超える敵";
         movementProgressStepIndex = -1;
         lastMovementPosition = default;
         lastMovementDistance = float.MaxValue;
@@ -900,5 +1049,6 @@ public abstract class Hunter
         Pending,
         Started,
         Unreachable,
+        UnsafeEnemy,
     }
 }

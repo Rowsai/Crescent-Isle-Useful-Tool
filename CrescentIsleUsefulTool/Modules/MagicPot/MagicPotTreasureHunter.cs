@@ -6,6 +6,7 @@ using CrescentIsleUsefulTool.ActionHelpers;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules.Automator;
+using CrescentIsleUsefulTool.Modules.Treasure;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Text;
@@ -52,6 +53,18 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
     private ulong openingCofferEntityId;
     private DateTime openingStartedUtc = DateTime.MinValue;
     private bool openingCastObserved;
+
+    private Vector3 watchedMovementDestination;
+
+    private Vector3 lastMovementPosition;
+
+    private float lastMovementDistance = float.MaxValue;
+
+    private DateTime lastMovementProgressUtc = DateTime.MinValue;
+
+    private DateTime lastDestinationProgressUtc = DateTime.MinValue;
+
+    private int movementRecoveryAttempts;
 
     internal bool HasGuidanceBuff => Svc.Objects.LocalPlayer?.StatusList.Any(status => status.StatusId == GuidanceStatusId) == true;
 
@@ -154,6 +167,11 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         }
 
         RuntimeStatus = $"推定した宝箱地点へ移動中です（残り {distance:F0}m）。";
+        if (RecoverStalledMovement(destination, distance, "推定した宝箱地点"))
+        {
+            return;
+        }
+
         if (!Player.Mounted && distance > 20f && EzThrottler.Throttle("MagicPotTreasure.Mount", 3000))
         {
             Actions.MountRoulette.Cast();
@@ -238,12 +256,18 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         nextElixirUseUtc = DateTime.UtcNow;
         nextMovementRetryUtc = DateTime.MinValue;
         ResetCofferInteraction();
+        ResetMovementWatchdog();
         RuntimeStatus = "財宝誘導を検知しました。既存の帰還処理を中断します。";
 
         Plugin.Chain.Abort();
         if (module.TryGetIPCSubscriber<VNavmesh>(out vnav))
         {
             VnavmeshIpc.TryStop(vnav);
+        }
+
+        if (module.TryGetModule<TreasureModule>(out var treasure) && treasure?.Hunter.IsRunning == true)
+        {
+            treasure.Hunter.PauseForConflictingMode("マジックポットの宝箱探索を優先するため一時停止しました。");
         }
 
         if (module.TryGetModule<AutomatorModule>(out var automator) && automator?.Config.Enabled == true)
@@ -271,6 +295,7 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         target = null;
         sourcePotFateId = null;
         ResetCofferInteraction();
+        ResetMovementWatchdog();
         RuntimeStatus = status;
     }
 
@@ -323,6 +348,11 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         {
             ResetCofferInteraction();
             RuntimeStatus = $"出現した宝箱へ移動中です（残り {distance:F1}m）。";
+            if (RecoverStalledMovement(cofferPosition, distance, "出現した宝箱"))
+            {
+                return;
+            }
+
             VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
             if (!isRunning)
             {
@@ -454,6 +484,63 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         hintDeadlineUtc = DateTime.MinValue;
         nextElixirUseUtc = DateTime.UtcNow.AddSeconds(3);
         RuntimeStatus = "マジックポットの宝箱を開封しました。";
+        ResetMovementWatchdog();
+    }
+
+    private bool RecoverStalledMovement(Vector3 destination, float distance, string destinationName)
+    {
+        var now = DateTime.UtcNow;
+        if (lastMovementProgressUtc == DateTime.MinValue ||
+            Vector3.Distance(watchedMovementDestination, destination) > 2f)
+        {
+            watchedMovementDestination = destination;
+            lastMovementPosition = Player.Position;
+            lastMovementDistance = distance;
+            lastMovementProgressUtc = now;
+            lastDestinationProgressUtc = now;
+            movementRecoveryAttempts = 0;
+            return false;
+        }
+
+        if (Vector3.Distance(Player.Position, lastMovementPosition) >= 1.5f)
+        {
+            lastMovementPosition = Player.Position;
+            lastMovementProgressUtc = now;
+        }
+
+        if (distance <= lastMovementDistance - 1f)
+        {
+            lastMovementDistance = distance;
+            lastDestinationProgressUtc = now;
+        }
+
+        if (now - lastMovementProgressUtc <= TimeSpan.FromSeconds(12) &&
+            now - lastDestinationProgressUtc <= TimeSpan.FromSeconds(35))
+        {
+            return false;
+        }
+
+        movementRecoveryAttempts++;
+        VnavmeshIpc.TryCancelAllPathfinds(vnav);
+        VnavmeshIpc.TryStop(vnav);
+        nextMovementRetryUtc = DateTime.MinValue;
+        lastMovementPosition = Player.Position;
+        lastMovementDistance = distance;
+        lastMovementProgressUtc = now;
+        lastDestinationProgressUtc = now;
+        RuntimeStatus = $"{destinationName}への移動停止を検知し、経路を再作成します（{movementRecoveryAttempts}回目）。";
+        Svc.Log.Warning(RuntimeStatus);
+        return true;
+    }
+
+    private void ResetMovementWatchdog()
+    {
+        watchedMovementDestination = default;
+        lastMovementPosition = default;
+        lastMovementDistance = float.MaxValue;
+        lastMovementProgressUtc = DateTime.MinValue;
+        lastDestinationProgressUtc = DateTime.MinValue;
+        movementRecoveryAttempts = 0;
     }
 
     private static bool IsValidCoffer(IGameObject obj)

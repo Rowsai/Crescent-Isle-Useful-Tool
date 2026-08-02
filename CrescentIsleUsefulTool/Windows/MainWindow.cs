@@ -352,6 +352,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
                 new SettingItem("イベントへの移動", "最寄りエーテライト経由", CrescentTheme.AccentSoft),
                 new SettingItem("長距離移動", "自動マウント", CrescentTheme.AccentSoft),
                 new SettingItem("探索対象の判定距離", $"{pathfinder.DetectionRange:F0}m", CrescentTheme.AccentSoft),
+                new SettingItem("最大エリアレベル", $"Lv.{pathfinder.MaxLevel}", CrescentTheme.AccentSoft),
                 new SettingItem("帰還経路コスト", $"{pathfinder.ReturnCost:F0}", CrescentTheme.AccentSoft),
                 new SettingItem("テレポート経路コスト", $"{pathfinder.TeleportCost:F0}", CrescentTheme.AccentSoft),
             ]),

@@ -198,6 +198,18 @@ public abstract class Activity
         return Vector3.Distance(Player.Position, destination) > 20f;
     }
 
+    public void ResetPathfindingForRecovery()
+    {
+        VnavmeshIpc.TryCancelAllPathfinds(vnav);
+        VnavmeshIpc.TryStop(vnav);
+        state = ActivityState.Idle;
+    }
+
+    public float DistanceToDestination()
+    {
+        return Player.DistanceTo(GetPosition());
+    }
+
     protected abstract float GetRadius();
 
     protected abstract TaskManagerTask GetPathfindingWatcher(StateManagerModule states);
