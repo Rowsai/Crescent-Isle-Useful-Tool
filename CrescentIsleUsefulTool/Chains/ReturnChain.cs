@@ -56,7 +56,9 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         // Every successful Demi-Déjion performs the たんきゅうしん check.
         // ApplyBuffs remains useful for callers already at camp, but can no
         // longer suppress this post-return safety check.
-        chain.ConditionalThen(_ => config.ApplyBuffs || performedDemiReturn, ApplyBuffs);
+        chain.ConditionalThen(
+            _ => config.ApplyBuffs || config.ForceTankyushin || performedDemiReturn,
+            () => ApplyBuffs(config.ForceTankyushin));
 
         if (config.ApproachAetheryte)
         {
@@ -188,14 +190,14 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                (config.ForceReturn || GetCostToReturn() < GetCostToWalk()));
     }
 
-    private Chain ApplyBuffs()
+    private Chain ApplyBuffs(bool forceTankyushin)
     {
         var vnav = module.GetIPCSubscriber<VNavmesh>();
         var buffs = module.GetModule<BuffModule>();
         var crystalPosition = Vector3.Zero;
 
         var chain = Chain.Create("Return.TankyushinCheck");
-        chain.RunIf(buffs.ShouldRefreshBuffs);
+        chain.RunIf(() => forceTankyushin || buffs.ShouldRefreshBuffs());
         chain.Then(new TaskManagerTask(() =>
         {
             if (!VnavmeshIpc.IsOperational(vnav, out _))
@@ -216,15 +218,26 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
             return true;
         }, new TaskManagerConfiguration { TimeLimitMS = 15000, ShowError = false }));
         chain.Then(_ => Actions.TryUnmount());
+        chain.Then(new TaskManagerTask(
+            () => !Svc.Condition[ConditionFlag.Mounted],
+            new TaskManagerConfiguration { TimeLimitMS = 5000, ShowError = false, TimeoutSilently = true }));
 
         chain.Then(() => Chain.Create("Return.ApproachKnowledgeCrystal")
             .Then(new PathfindAndMoveToChain(vnav, crystalPosition))
             .WaitUntilNear(vnav, crystalPosition, AethernetData.DISTANCE)
-            .Then(_ => { VnavmeshIpc.TryStop(vnav); }));
+            .Then(_ => { VnavmeshIpc.TryStop(vnav); })
+            .Then(_ => ZoneData.IsNearKnowledgeCrystal()));
 
-        chain.Then(new AllBuffsChain(buffs));
+        chain.ConditionalThen(
+            _ => forceTankyushin,
+            new TankyushinActivationChain());
+        chain.ConditionalThen(
+            _ => !forceTankyushin,
+            new AllBuffsChain(buffs));
         chain.Then(new TaskManagerTask(
-            () => !buffs.ShouldRefreshBuffs(),
+            () => forceTankyushin
+                ? FreelancerBuffChain.AppliedStatuses.All(Player.Status.Has)
+                : !buffs.ShouldRefreshBuffs(),
             new TaskManagerConfiguration { TimeLimitMS = 15000, ShowError = false }));
 
         return chain;

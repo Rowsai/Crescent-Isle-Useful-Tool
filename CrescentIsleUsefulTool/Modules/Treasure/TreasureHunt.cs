@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
+using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Ipc;
-using CrescentIsleUsefulTool.Modules.Buff.Chains;
 using CrescentIsleUsefulTool.Pathfinding;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.Automation.NeoTaskManager;
@@ -64,10 +64,6 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override bool RebuildRouteOnResume => ZoneData.IsInNorthHorn();
 
     protected override bool RebuildRouteAfterUnreachable => ZoneData.IsInNorthHorn();
-
-    protected override bool AlwaysUseDemiReturnAtRouteStart => ZoneData.IsInNorthHorn();
-
-    protected override bool UpdateTreasureCountAtRouteStart => true;
 
     protected override float GetInactiveNodeConfirmationRange()
     {
@@ -287,14 +283,16 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override string GetRouteDescription()
     {
         return ZoneData.IsInNorthHorn()
-            ? "開始時にたんきゅうしん、デミデジョン、マギ・トレジャーサーチを実行します。毎回同じ固定順で地上の全座標へ接近し、宝箱が検出されなければ次の地点へ進みます。南西高台は乱気流で出入りし、地下空洞は対象外です。"
+            ? "開始時にデミデジョンで拠点へ戻り、ナレッジクリスタル付近でたんきゅうしん、マギ・トレジャーサーチを実行します。毎回同じ固定順で地上の全座標へ接近し、宝箱が検出されなければ次の地点へ進みます。南西高台は乱気流で出入りし、地下空洞は対象外です。"
             : base.GetRouteDescription();
     }
 
     protected override void OnHuntStarted(bool isResuming)
     {
         Plugin.Chain.Abort();
-        Plugin.Chain.Submit(new TankyushinActivationChain());
+        Plugin.Chain.Submit(ChainHelper.TankyushinAtKnowledgeCrystalChain(
+            alwaysUseDemiReturn: true,
+            updateTreasureCount: true));
         countRevisionAtRouteStart = module.Tracker.CountRevision;
         awaitingRouteStartCount = true;
         RouteStartRemainingChestCount = null;

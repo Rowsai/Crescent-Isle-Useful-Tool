@@ -68,6 +68,23 @@ public class ChainHelper
         return new ReturnChain(Modules.GetModule<TeleporterModule>(), config);
     }
 
+    public static Func<Chain> TankyushinAtKnowledgeCrystalChain(
+        bool alwaysUseDemiReturn = false,
+        bool updateTreasureCount = false)
+    {
+        return () => Chain.Create("TankyushinAtKnowledgeCrystal")
+            .Then(ReturnChain(new ReturnChainConfig
+            {
+                ForceReturn = true,
+                AlwaysUseDemiReturn = alwaysUseDemiReturn,
+                WaitForStationaryDemiReturn = true,
+                ApproachAetheryte = true,
+                ApplyBuffs = true,
+                ForceTankyushin = true,
+                UpdateTreasureCount = updateTreasureCount,
+            }));
+    }
+
     public static TeleportChain TeleportChain(Aethernet aethernet)
     {
         return new TeleportChain(

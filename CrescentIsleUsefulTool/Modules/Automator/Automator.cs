@@ -182,7 +182,7 @@ public class Automator
         // applying the configured buffs.
         if (Activity == null && IsProtectedBuffSequenceActive())
         {
-            SetRuntimeStatus("たんきゅうしんを実行し、元のサポートジョブへ戻しています。");
+            SetRuntimeStatus("ナレッジクリスタルへ移動し、たんきゅうしん実行後に元のサポートジョブへ戻します。");
             return;
         }
 
@@ -432,7 +432,7 @@ public class Automator
             return Plugin.Chain.QueueCount > 0;
         }
 
-        if (current.Name is "TankyushinActivationChain" or "AllBuffsChain")
+        if (current.Name is "TankyushinAtKnowledgeCrystal" or "TankyushinActivationChain" or "AllBuffsChain")
         {
             return true;
         }
@@ -493,10 +493,22 @@ public class Automator
             return
             [
                 "自動操作モードは停止中です",
-                "開始時にたんきゅうしんを実行",
+                "開始時にナレッジクリスタル付近へ移動",
+                "たんきゅうしん実行後に元のサポートジョブへ復帰",
                 "設定した優先順位でFATE・CEを監視",
-                "対象発生時に最寄りエーテライトへ移動",
-                "完了後にデミデジョンで拠点へ帰還",
+                "対象へ移動し、完了後はデミデジョンで帰還",
+            ];
+        }
+
+        if (Plugin.Chain.CurrentChain?.Name == "TankyushinAtKnowledgeCrystal")
+        {
+            return
+            [
+                "デミデジョンで拠点へ帰還",
+                "ナレッジクリスタル付近へ移動",
+                "移動停止とマウント解除を確認",
+                "すっぴんへ変更してたんきゅうしんを実行",
+                "元のサポートジョブへ復帰して監視開始",
             ];
         }
 

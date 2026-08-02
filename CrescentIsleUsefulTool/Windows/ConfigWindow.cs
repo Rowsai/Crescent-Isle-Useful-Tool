@@ -177,7 +177,7 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
                 "AutomationCommonConfig",
                 "自動操作の基本設定",
                 () => automator.panel.DrawBasicConfiguration(automator),
-                "開始時にはアクションID 46606「たんきゅうしん」を必ず使用し、元のサポートジョブへ戻ります。"
+                "開始時はナレッジクリスタル付近へ移動し、アクションID 46606「たんきゅうしん」を使用後、元のサポートジョブへ戻ります。"
             );
             ImGui.EndTabItem();
         }
@@ -215,7 +215,7 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
             () =>
             {
                 CrescentTheme.Status("アクション", "たんきゅうしん / ID 46606", CrescentTheme.AccentSoft);
-                ImGui.TextWrapped("すっぴんへ一時変更して4種類の30分バフをまとめて付与し、実行前のサポートジョブへ戻ります。");
+                ImGui.TextWrapped("ナレッジクリスタル付近へ移動後、すっぴんへ一時変更して4種類の30分バフをまとめて付与し、実行前のサポートジョブへ戻ります。");
                 ImGui.Spacing();
 
                 var enabled = buff.Config.Enabled;

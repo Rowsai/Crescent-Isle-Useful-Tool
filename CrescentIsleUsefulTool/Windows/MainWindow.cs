@@ -390,6 +390,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
             () => DrawSettingsCard("CurrentBuffSettings", "たんきゅうしん・バフ", [
                 Setting("バフ機能", buff.Enabled),
                 Setting("たんきゅうしんを使用", buff.UseInquiringMind && buff.Enabled),
+                new SettingItem("使用場所", "ナレッジクリスタル付近へ移動後に実行", CrescentTheme.AccentSoft),
                 new SettingItem("再適用しきい値", $"残り{buff.ReapplyThreshold}分", CrescentTheme.AccentSoft),
                 new SettingItem(
                     "現在の最短残り時間",
@@ -415,19 +416,44 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
     {
         CrescentTheme.Card(id, title, () =>
         {
+            // Stack label and value on narrow cards. This keeps long provider
+            // names and priority lists visible without horizontal clipping.
+            if (ImGui.GetContentRegionAvail().X < 460f)
+            {
+                var index = 0;
+                foreach (var setting in settings)
+                {
+                    ImGui.TextDisabled(setting.Label);
+                    ImGui.Indent(12f);
+                    ImGui.PushStyleColor(ImGuiCol.Text, setting.Color);
+                    ImGui.TextWrapped(setting.Value);
+                    ImGui.PopStyleColor();
+                    ImGui.Unindent(12f);
+                    if (++index < settings.Count)
+                    {
+                        ImGui.Separator();
+                    }
+                }
+
+                return;
+            }
+
             if (!ImGui.BeginTable($"##{id}Table", 2, ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
             {
                 return;
             }
 
-            ImGui.TableSetupColumn("設定", ImGuiTableColumnFlags.WidthStretch);
-            ImGui.TableSetupColumn("現在値", ImGuiTableColumnFlags.WidthFixed, 230f);
+            ImGui.TableSetupColumn("設定", ImGuiTableColumnFlags.WidthStretch, 0.38f);
+            ImGui.TableSetupColumn("現在値", ImGuiTableColumnFlags.WidthStretch, 0.62f);
             foreach (var setting in settings)
             {
+                ImGui.TableNextRow();
                 ImGui.TableNextColumn();
-                ImGui.TextUnformatted(setting.Label);
+                ImGui.TextWrapped(setting.Label);
                 ImGui.TableNextColumn();
-                ImGui.TextColored(setting.Color, setting.Value);
+                ImGui.PushStyleColor(ImGuiCol.Text, setting.Color);
+                ImGui.TextWrapped(setting.Value);
+                ImGui.PopStyleColor();
             }
 
             ImGui.EndTable();

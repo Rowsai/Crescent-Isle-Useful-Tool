@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Ipc;
 using ECommons.DalamudServices;
@@ -7,7 +8,6 @@ using Ocelot.IPC;
 using Ocelot.Modules;
 using Ocelot.Windows;
 using CrescentIsleUsefulTool.Enums;
-using CrescentIsleUsefulTool.Modules.Buff.Chains;
 
 namespace CrescentIsleUsefulTool.Modules.Automator;
 
@@ -88,8 +88,8 @@ public class AutomatorModule : Module
         if (wasDisabled)
         {
             Plugin.Chain.Abort();
-            Plugin.Chain.Submit(new TankyushinActivationChain());
-            automator.SetRuntimeStatus("たんきゅうしんを使用し、元のサポートジョブへ戻しています。");
+            Plugin.Chain.Submit(ChainHelper.TankyushinAtKnowledgeCrystalChain());
+            automator.SetRuntimeStatus("ナレッジクリスタルへ移動し、たんきゅうしんを使用します。");
             Svc.Chat.Print(T("messages.on"));
         }
     }

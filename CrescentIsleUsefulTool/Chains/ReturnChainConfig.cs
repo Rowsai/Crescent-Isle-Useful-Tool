@@ -28,6 +28,13 @@ public struct ReturnChainConfig()
     public bool ApplyBuffs { get; init; } = true;
 
     /// <summary>
+    /// Always execute たんきゅうしん after approaching a knowledge crystal,
+    /// regardless of the optional buff setting or remaining durations.
+    /// Mode and treasure-hunt startup use this mandatory path.
+    /// </summary>
+    public bool ForceTankyushin { get; init; } = false;
+
+    /// <summary>
     /// Cast Treasuresight after a completed automated activity so that the
     /// tracker receives the current bronze and silver coffer counts.
     /// </summary>

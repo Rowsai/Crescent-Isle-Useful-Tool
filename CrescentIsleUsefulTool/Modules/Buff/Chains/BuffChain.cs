@@ -13,7 +13,9 @@ public abstract class BuffChain(Job job, IReadOnlyCollection<PlayerStatus> buffs
 {
     protected override Chain Create(Chain chain)
     {
-        chain.RunIf(ShouldRun).Then(job.ChangeToChain);
+        chain.RunIf(ShouldRun)
+            .Then(_ => ZoneData.IsNearKnowledgeCrystal())
+            .Then(job.ChangeToChain);
 
         return action
             .CastOnChain(chain)
