@@ -261,7 +261,9 @@ public class Chain : IDisposable
 
     public void Dispose()
     {
-        Svc.Log.Info($"Disposing chain [{Name}]");
+        // Short watcher chains can complete every frame. Logging every disposal
+        // at information level flooded real-world logs and hid actionable errors.
+        Svc.Log.Debug($"Disposing chain [{Name}]");
         tasks.Dispose();
 
         OnCancelCallback = null;

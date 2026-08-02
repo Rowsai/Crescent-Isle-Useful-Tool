@@ -39,6 +39,11 @@ public class TeleporterModule : Module
         states.OnExitInCriticalEncounter += teleporter.OnCriticalEncounterEnd;
     }
 
+    public override void Update(UpdateContext context)
+    {
+        teleporter.UpdateCompletionReturn();
+    }
+
     public override void Dispose()
     {
         var states = GetModule<StateManagerModule>();

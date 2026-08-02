@@ -1,14 +1,15 @@
+using System;
 using System.Linq;
 using System.Numerics;
 using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
 using CrescentIsleUsefulTool.Ipc;
-using CrescentIsleUsefulTool.Modules.Automator;
 using CrescentIsleUsefulTool.Modules.StateManager;
 using Dalamud.Interface;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
+using ECommons.GameHelpers;
 using ECommons.ImGuiMethods;
 using Dalamud.Bindings.ImGui;
 using Ocelot.Ui;
@@ -20,6 +21,15 @@ namespace CrescentIsleUsefulTool.Modules.Teleporter;
 
 public class Teleporter(TeleporterModule module)
 {
+    private bool completionReturnRequested;
+    private bool completionReturnInProgress;
+    private bool completionDemiReturnCompleted;
+    private ReturnChain? activeCompletionReturnChain;
+    private DateTime completionReturnStartedUtc = DateTime.MinValue;
+    private DateTime nextCompletionReturnAttemptUtc = DateTime.MinValue;
+
+    public bool IsCompletionReturnPending => completionReturnRequested || completionReturnInProgress;
+
     public void Button(Aethernet? aethernet, Vector3 destination, string name, string id, EventData ev)
     {
         if (!module.TryGetIPCSubscriber<VNavmesh>(out var vnav) || !VnavmeshIpc.IsOperational(vnav, out _))
@@ -51,8 +61,8 @@ public class Teleporter(TeleporterModule module)
             Svc.Log.Info($"Pathfinding to {name} at {destination}");
 
             Plugin.Chain.Submit(() => Chain.Create("Pathfinding")
+                .Then(ChainHelper.MountChain())
                 .Then(new PathfindingChain(vnav!, destination, ev, 20f))
-                .ConditionalThen(_ => module.Config.ShouldMount, ChainHelper.MountChain())
                 .WaitUntilNear(vnav!, destination, 205f)
             );
         }
@@ -93,9 +103,8 @@ public class Teleporter(TeleporterModule module)
 
                 if (module.TryGetIPCSubscriber<VNavmesh>(out var vnav) && VnavmeshIpc.IsOperational(vnav, out _))
                 {
-                    chain.RunIf(() => module.Config.PathToDestination)
+                    chain.Then(ChainHelper.MountChain())
                         .Then(new PathfindingChain(vnav!, destination, ev, 20f))
-                        .ConditionalThen(_ => module.Config.ShouldMount, ChainHelper.MountChain())
                         .WaitUntilNear(vnav!, destination, 20f);
                 }
 
@@ -126,32 +135,115 @@ public class Teleporter(TeleporterModule module)
 
     public void OnFateEnd(StateManagerModule states)
     {
-        if (module.GetModule<AutomatorModule>().IsEnabled)
-        {
-            return;
-        }
-
-        if (!module.Config.ReturnAfterFate)
-        {
-            return;
-        }
-
-        Return();
+        RequestMandatoryCompletionReturn("FATE完了");
     }
 
     public void OnCriticalEncounterEnd(StateManagerModule states)
     {
-        if (module.GetModule<AutomatorModule>().IsEnabled)
+        RequestMandatoryCompletionReturn("CE完了");
+    }
+
+    /// <summary>
+    /// Queues the single mandatory completion sequence shared by automated and
+    /// manually participated activities. Repeated event notifications are
+    /// coalesced, preventing a second Demi-Déjion beside the base aetheryte.
+    /// </summary>
+    public bool RequestMandatoryCompletionReturn(string reason)
+    {
+        if (!ZoneData.IsInOccultCrescent() || ZoneData.IsInForkedTower() || Player.IsDead)
+        {
+            return false;
+        }
+
+        if (!completionReturnRequested)
+        {
+            Svc.Log.Info($"{reason}: mandatory Demi-Déjion return requested.");
+            completionDemiReturnCompleted = false;
+        }
+
+        completionReturnRequested = true;
+        TryStartCompletionReturn();
+        return true;
+    }
+
+    public void UpdateCompletionReturn()
+    {
+        if (!completionReturnRequested)
+        {
+            completionReturnInProgress = false;
+            activeCompletionReturnChain = null;
+            return;
+        }
+
+        if (!ZoneData.IsInOccultCrescent() || ZoneData.IsInForkedTower() || Player.IsDead)
+        {
+            completionReturnRequested = false;
+            completionReturnInProgress = false;
+            return;
+        }
+
+        // ChainQueue.Abort disposes callbacks immediately, so detect an
+        // externally cancelled return here and retry instead of remaining stuck.
+        if (completionReturnInProgress &&
+            DateTime.UtcNow - completionReturnStartedUtc > TimeSpan.FromMilliseconds(500) &&
+            !Plugin.Chain.IsRunning &&
+            Plugin.Chain.QueueCount == 0)
+        {
+            completionDemiReturnCompleted |= activeCompletionReturnChain?.PerformedDemiReturn == true;
+            activeCompletionReturnChain = null;
+            completionReturnInProgress = false;
+            nextCompletionReturnAttemptUtc = DateTime.UtcNow.AddSeconds(1);
+        }
+
+        TryStartCompletionReturn();
+    }
+
+    private void TryStartCompletionReturn()
+    {
+        if (!completionReturnRequested || completionReturnInProgress || DateTime.UtcNow < nextCompletionReturnAttemptUtc)
         {
             return;
         }
 
-        if (!module.Config.ReturnAfterCriticalEncounter)
+        if (!module.TryGetIPCSubscriber<VNavmesh>(out var vnav) || !VnavmeshIpc.IsOperational(vnav, out _))
         {
+            nextCompletionReturnAttemptUtc = DateTime.UtcNow.AddSeconds(1);
             return;
         }
 
-        Return();
+        completionReturnInProgress = true;
+        completionReturnStartedUtc = DateTime.UtcNow;
+        Plugin.Chain.Abort();
+        VnavmeshIpc.TryStop(vnav);
+        var returnChain = new ReturnChain(module, new ReturnChainConfig
+        {
+            ForceReturn = true,
+            AlwaysUseDemiReturn = !completionDemiReturnCompleted,
+            WaitForStationaryDemiReturn = true,
+            ApproachAetheryte = true,
+            ApplyBuffs = true,
+            UpdateTreasureCount = true,
+        });
+        activeCompletionReturnChain = returnChain;
+        Plugin.Chain.Submit(() => Chain.Create("MandatoryActivityCompletionReturn")
+            .Then(returnChain)
+            .OnComplete(() =>
+            {
+                completionDemiReturnCompleted |= returnChain.PerformedDemiReturn;
+                completionReturnInProgress = false;
+                activeCompletionReturnChain = null;
+                if (returnChain.IsComplete())
+                {
+                    completionReturnRequested = false;
+                    Svc.Log.Info("Mandatory activity completion return finished.");
+                }
+                else
+                {
+                    nextCompletionReturnAttemptUtc = DateTime.UtcNow.AddSeconds(1);
+                    Svc.Log.Warning("Mandatory activity completion return did not finish; retrying.");
+                }
+            })
+            .OnFinally(() => completionReturnInProgress = false));
     }
 
     public void Return()
@@ -161,7 +253,12 @@ public class Teleporter(TeleporterModule module)
             return;
         }
 
-        Plugin.Chain.Submit(ChainHelper.ReturnChain());
+        Plugin.Chain.Submit(ChainHelper.ReturnChain(new ReturnChainConfig
+        {
+            ForceReturn = true,
+            ApproachAetheryte = true,
+            ApplyBuffs = true,
+        }));
     }
 
     public bool IsReady()

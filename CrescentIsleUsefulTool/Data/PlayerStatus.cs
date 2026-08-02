@@ -34,7 +34,15 @@ public enum PlayerStatus : uint
     PhantomMysticKnight = 4803,
     PhantomGladiator = 4804,
     PhantomDancer = 4805,
-    
+    // North Horn support jobs
+    PhantomNinja = 5328,
+    PhantomWhiteMage = 5329,
+    PhantomBlackMage = 5330,
+    PhantomDragoon = 5331,
+    PhantomSummoner = 5332,
+    PhantomBlueMage = 5333,
+    PhantomRedMage = 5334,
+    PhantomNecromancer = 5335,
 }
 
 public static class StatusListExtensions

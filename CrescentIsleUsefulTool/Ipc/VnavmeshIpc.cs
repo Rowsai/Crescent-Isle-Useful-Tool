@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Dalamud.Plugin.Ipc.Exceptions;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
+using ECommons.Throttlers;
 using Ocelot.IPC;
 
 namespace CrescentIsleUsefulTool.Ipc;
@@ -119,6 +120,53 @@ public static class VnavmeshIpc
         }
     }
 
+    public static bool TryIsSimpleMovePathfinding(VNavmesh? vnav, out bool isPathfinding)
+    {
+        isPathfinding = false;
+        if (vnav == null || !vnav.IsReady())
+        {
+            return false;
+        }
+
+        try
+        {
+            isPathfinding = vnav.IsSimpleMoveInProgress();
+            return true;
+        }
+        catch (IpcNotReadyError)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning(ex, "Failed to query vnavmesh simple-move pathfinding state.");
+            return false;
+        }
+    }
+
+    public static bool TryCancelAllPathfinds(VNavmesh? vnav)
+    {
+        if (vnav == null || !vnav.IsReady())
+        {
+            return false;
+        }
+
+        try
+        {
+            vnav.CancelAllPathfinds();
+            return true;
+        }
+        catch (IpcNotReadyError)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning(ex, "Failed to cancel vnavmesh pathfinding safely.");
+            return false;
+        }
+    }
+
     public static bool IsMovementActive(VNavmesh? vnav)
     {
         if (Player.IsMoving)
@@ -132,12 +180,27 @@ public static class VnavmeshIpc
             return true;
         }
 
-        return !TryIsPathfinding(vnav, out var isPathfinding) || isPathfinding;
+        if (!TryIsPathfinding(vnav, out var isPathfinding) || isPathfinding)
+        {
+            return true;
+        }
+
+        return !TryIsSimpleMovePathfinding(vnav, out var simpleMovePathfinding) || simpleMovePathfinding;
     }
 
     public static bool TryPathfindAndMoveTo(VNavmesh? vnav, Vector3 destination, bool fly)
     {
         if (!IsOperational(vnav, out _))
+        {
+            return false;
+        }
+
+        // vnavmesh rejects a second request while its previous path task is
+        // still running. Waiting here prevents per-frame IPC errors and the
+        // apparent standstill caused by continually replacing requests.
+        if (!TryIsPathfinding(vnav, out var isPathfinding) || isPathfinding ||
+            (TryIsSimpleMovePathfinding(vnav, out var simpleMovePathfinding) && simpleMovePathfinding) ||
+            !EzThrottler.Throttle("CIUT.Vnavmesh.PathfindAndMoveTo", 250))
         {
             return false;
         }
@@ -161,6 +224,12 @@ public static class VnavmeshIpc
     {
         task = null;
         if (!IsOperational(vnav, out _))
+        {
+            return false;
+        }
+
+        if (!TryIsPathfinding(vnav, out var isPathfinding) || isPathfinding ||
+            !EzThrottler.Throttle("CIUT.Vnavmesh.Pathfind", 250))
         {
             return false;
         }

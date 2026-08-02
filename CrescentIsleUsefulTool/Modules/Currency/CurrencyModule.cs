@@ -13,7 +13,7 @@ public class CurrencyModule(Plugin plugin, Config config) : Module(plugin, confi
 
     public override bool ShouldRender
     {
-        get => Config.IsPropertyEnabled(nameof(Config.Enabled));
+        get => true;
     }
 
     public override bool ShouldUpdate

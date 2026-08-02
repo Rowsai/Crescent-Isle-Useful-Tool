@@ -41,9 +41,6 @@ public class TeleportChain(Aethernet aethernet, Lifestream lifestream, Teleporte
         chain.Then(_ => { VnavmeshIpc.TryStop(vnav); });
         chain.Then(_ => LifestreamIpc.TryAethernetTeleport(lifestream, (uint)aethernet));
         chain.WaitToCycleCondition(ConditionFlag.BetweenAreas);
-        // Mount if we should mount and not pathfind, otherwise let the pathfinder handle it
-        chain.ConditionalThen(_ => module.Config is { ShouldMount: true, PathToDestination: false }, ChainHelper.MountChain());
-
         return chain;
     }
 }

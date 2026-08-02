@@ -9,7 +9,10 @@ public class InCriticalEncounterHandler(StateManagerModule module) : BaseHandler
     {
         if (!IsInCriticalEncounter())
         {
-            return IsInCombat() ? State.InCriticalEncounter : State.Idle;
+            // The CE has ended even if the player remains in combat for a few
+            // frames. Staying in InCriticalEncounter suppresses the exit event
+            // and leaves automation waiting forever.
+            return IsInCombat() ? State.InCombat : State.Idle;
         }
 
         return null;

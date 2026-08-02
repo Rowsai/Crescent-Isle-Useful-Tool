@@ -18,7 +18,7 @@ public static class ChainPathfinding
             }
 
             return false;
-        }, new TaskManagerConfiguration { TimeLimitMS = 2000 });
+        }, new TaskManagerConfiguration { TimeLimitMS = 10000, ShowError = false, TimeoutSilently = true });
     }
 
     public static Chain WaitToStartPathfinding(this Chain chain, VNavmesh vnav)
@@ -38,7 +38,7 @@ public static class ChainPathfinding
             }
 
             return false;
-        }, new TaskManagerConfiguration { TimeLimitMS = 30000 });
+        }, new TaskManagerConfiguration { TimeLimitMS = 30000, ShowError = false, TimeoutSilently = true });
     }
 
     public static Chain WaitToStopPathfinding(this Chain chain, VNavmesh vnav)
@@ -57,7 +57,20 @@ public static class ChainPathfinding
     {
         return chain
             .Debug($"Pathfinding and moving to {destination}")
-            .Then(_ => VNavmeshSafe.TryPathfindAndMoveTo(vnav, destination, false));
+            .Then(new TaskManagerTask(() =>
+            {
+                // vnavmesh rejects a new request while its previous path task
+                // is still being calculated. Wait and throttle retries instead
+                // of invoking the IPC once per frame and spamming errors.
+                if (!VNavmeshSafe.TryIsPathfinding(vnav, out var pathfinding) || pathfinding ||
+                    (VNavmeshSafe.TryIsSimpleMovePathfinding(vnav, out var simpleMovePathfinding) && simpleMovePathfinding))
+                {
+                    return false;
+                }
+
+                return EzThrottler.Throttle("ChainPathfinding.PathfindAndMoveTo", 250) &&
+                       VNavmeshSafe.TryPathfindAndMoveTo(vnav, destination, false);
+            }, new TaskManagerConfiguration { TimeLimitMS = 30000, ShowError = false, TimeoutSilently = true }));
     }
 
     private static TaskManagerTask WaitUntilNear(VNavmesh vnav, Vector3 destination, float distance = 5f)
@@ -70,9 +83,8 @@ public static class ChainPathfinding
                 return false;
             }
 
-            return (VNavmeshSafe.TryIsRunning(vnav, out var running) && !running) ||
-                   Vector3.Distance(player.Position, destination) <= distance;
-        }, new TaskManagerConfiguration { TimeLimitMS = 30000 });
+            return Vector3.Distance(player.Position, destination) <= distance;
+        }, new TaskManagerConfiguration { TimeLimitMS = 180000, ShowError = false, TimeoutSilently = true });
     }
 
     public static Chain WaitUntilNear(this Chain chain, VNavmesh vnav, Vector3 destination, float distance = 5f)

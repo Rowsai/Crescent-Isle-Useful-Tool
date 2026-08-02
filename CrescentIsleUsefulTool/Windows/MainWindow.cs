@@ -188,6 +188,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
 
         DrawPage("概要", () => DrawOverview(context));
         DrawPage("FATE・CE", () => DrawActivityPage(context));
+        DrawPage("優先順位", DrawPriorityPage);
         DrawPage("宝箱・探索", () => DrawTreasurePage(context));
         DrawPage("支援ツール", () => DrawUtilityPage(context));
         DrawPage("計測", () => DrawMetricsPage(context));
@@ -254,10 +255,62 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
             () => RenderModule<ExpModule>(context));
     }
 
+    private void DrawPriorityPage()
+    {
+        var automator = Plugin.Modules.GetModule<AutomatorModule>();
+        CrescentTheme.Card(
+            "AutomationPriorityOrder",
+            "自動操作の優先順位",
+            () =>
+            {
+                ImGui.TextWrapped("発生中の対象が複数ある場合、上にある種類から選択します。矢印で任意の順番に変更できます。");
+                ImGui.TextDisabled("マジックポット予想が5分未満の待機処理と、参加中コンテンツ、完了後のデミデジョン帰還は安全上この順序より優先されます。");
+                ImGui.Spacing();
+
+                var order = automator.Config.GetPriorityOrder().ToList();
+                if (ImGui.BeginTable("##AutomationPriorityTable", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+                {
+                    ImGui.TableSetupColumn("順位", ImGuiTableColumnFlags.WidthFixed, 58f);
+                    ImGui.TableSetupColumn("対象", ImGuiTableColumnFlags.WidthStretch);
+                    ImGui.TableSetupColumn("変更", ImGuiTableColumnFlags.WidthFixed, 155f);
+                    ImGui.TableHeadersRow();
+
+                    for (var index = 0; index < order.Count; index++)
+                    {
+                        var priority = order[index];
+                        ImGui.TableNextColumn();
+                        ImGui.TextColored(index == 0 ? CrescentTheme.Accent : CrescentTheme.AccentSoft, $"{index + 1} 位");
+                        ImGui.TableNextColumn();
+                        ImGui.TextUnformatted(priority.ToJapaneseLabel());
+                        ImGui.TableNextColumn();
+
+                        ImGui.BeginDisabled(index == 0);
+                        if (ImGui.SmallButton($"↑ 上へ##PriorityUp_{priority}"))
+                        {
+                            automator.Config.MovePriority(priority, -1);
+                            automator.PluginConfig.Save();
+                        }
+                        ImGui.EndDisabled();
+                        ImGui.SameLine();
+                        ImGui.BeginDisabled(index == order.Count - 1);
+                        if (ImGui.SmallButton($"↓ 下へ##PriorityDown_{priority}"))
+                        {
+                            automator.Config.MovePriority(priority, 1);
+                            automator.PluginConfig.Save();
+                        }
+                        ImGui.EndDisabled();
+                    }
+
+                    ImGui.EndTable();
+                }
+            },
+            "変更内容は自動保存され、次の対象選択から反映されます。",
+            CrescentTheme.AccentSoft);
+    }
+
     private void DrawCurrentSettingsPage()
     {
         var automator = primaryPlugin.Config.AutomatorConfig;
-        var teleporter = primaryPlugin.Config.TeleporterConfig;
         var treasure = primaryPlugin.Config.TreasureConfig;
         var magicPot = primaryPlugin.Config.MagicPotConfig;
         var buff = primaryPlugin.Config.BuffConfig;
@@ -289,15 +342,15 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
             new SettingItem("交戦開始距離", $"{automator.EngagementRange:F1}m", CrescentTheme.AccentSoft),
             new SettingItem("南征編CE／FATE", $"{automator.CriticalEncountersMap.Count(item => item.Value)}／{automator.FatesMap.Count(item => item.Value)}件 有効", CrescentTheme.AccentSoft),
             new SettingItem("北征編CE／FATE", $"{NorthHornContent.CriticalEncounters.Count(item => automator.IsNorthCriticalEncounterEnabled(item.Id))}／{NorthHornContent.Fates.Count(item => automator.IsNorthFateEnabled(item.Id))}件 有効", CrescentTheme.AccentSoft),
+            new SettingItem("優先順位", string.Join(" → ", automator.GetPriorityOrder().Select(item => item.ToJapaneseLabel())), CrescentTheme.AccentSoft),
         ]);
 
         DrawResponsiveColumns(
             () => DrawSettingsCard("CurrentTravelSettings", "移動・帰還", [
-                Setting("テレポート後にマウント", teleporter.ShouldMount),
-                Setting("テレポート後に目的地へ移動", teleporter.PathToDestination),
-                Setting("FATE後に拠点へ帰還", teleporter.ReturnAfterFate),
-                Setting("CE後に拠点へ帰還", teleporter.ReturnAfterCriticalEncounter),
-                Setting("帰還後にエーテライトへ接近", teleporter.ApproachAetheryte),
+                new SettingItem("FATE・CE完了時", "デミデジョンで必ず帰還", CrescentTheme.Success),
+                new SettingItem("帰還後", "エーテライト付近へ移動", CrescentTheme.AccentSoft),
+                new SettingItem("イベントへの移動", "最寄りエーテライト経由", CrescentTheme.AccentSoft),
+                new SettingItem("長距離移動", "自動マウント", CrescentTheme.AccentSoft),
                 new SettingItem("探索対象の判定距離", $"{pathfinder.DetectionRange:F0}m", CrescentTheme.AccentSoft),
                 new SettingItem("帰還経路コスト", $"{pathfinder.ReturnCost:F0}", CrescentTheme.AccentSoft),
                 new SettingItem("テレポート経路コスト", $"{pathfinder.TeleportCost:F0}", CrescentTheme.AccentSoft),
@@ -329,8 +382,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
                 Setting("にんじん自動探索", carrots.EnableCarrotHunt && carrots.Enabled),
                 Setting("フォークタワー支援", forkedTower.Enabled),
                 Setting("モブ討伐支援", mobFarmer.Enabled),
-                Setting("通貨計測", primaryPlugin.Config.CurrencyConfig.Enabled),
-                Setting("経験値計測", primaryPlugin.Config.ExpConfig.Enabled),
+                new SettingItem("通貨・経験値計測", "常時有効", CrescentTheme.Success),
                 new SettingItem("使用マウント", primaryPlugin.Config.MountConfig.MountRoulette ? "マウントルーレット" : $"マウントID {primaryPlugin.Config.MountConfig.Mount}", CrescentTheme.AccentSoft),
             ]));
 

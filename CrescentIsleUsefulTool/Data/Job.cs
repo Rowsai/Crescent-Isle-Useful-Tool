@@ -1,7 +1,10 @@
 using CrescentIsleUsefulTool.Enums;
+using ECommons.Automation.NeoTaskManager;
+using ECommons.DalamudServices;
+using ECommons.GameHelpers;
+using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using Ocelot.Chain;
-using Ocelot.Chain.ChainEx;
 
 namespace CrescentIsleUsefulTool.Data;
 
@@ -50,6 +53,14 @@ public class Job
                 JobId.MysticKnight => MysticKnight,
                 JobId.Gladiator => Gladiator,
                 JobId.Dancer => Dancer,
+                JobId.Ninja => Ninja,
+                JobId.WhiteMage => WhiteMage,
+                JobId.BlackMage => BlackMage,
+                JobId.Dragoon => Dragoon,
+                JobId.Summoner => Summoner,
+                JobId.BlueMage => BlueMage,
+                JobId.RedMage => RedMage,
+                JobId.Necromancer => Necromancer,
                 _ => Freelancer,
             };
         }
@@ -61,20 +72,34 @@ public class Job
         this.status = status;
     }
 
-    public unsafe void ChangeTo()
+    public unsafe bool TryChangeTo()
     {
-        if (PublicContentOccultCrescent.GetState() != null)
+        if (PublicContentOccultCrescent.GetState() == null)
         {
-            PublicContentOccultCrescent.ChangeSupportJob(ByteId);
+            return false;
         }
+
+        return PublicContentOccultCrescent.ChangeSupportJob(ByteId);
     }
 
     public Chain ChangeToChain()
     {
-        return Chain.Create()
-            .RunIf(() => Current.id != id)
-            .Then(_ => ChangeTo())
-            .WaitUntilStatus(UintStatus);
+        return Chain.Create($"ChangeSupportJob({id})")
+            .Then(new TaskManagerTask(() =>
+            {
+                if (Current.id == id && Player.Status.Has(status))
+                {
+                    return true;
+                }
+
+                if (EzThrottler.Throttle($"CIUT.ChangeSupportJob.{ByteId}", 1000))
+                {
+                    var accepted = TryChangeTo();
+                    Svc.Log.Debug($"Support job change request: {id} (accepted={accepted})");
+                }
+
+                return false;
+            }, new TaskManagerConfiguration { TimeLimitMS = 15000, ShowError = false }));
     }
 
     public readonly static Job Freelancer = new(JobId.Freelancer, PlayerStatus.PhantomFreelancer);
@@ -108,4 +133,20 @@ public class Job
     public readonly static Job Gladiator = new(JobId.Gladiator, PlayerStatus.PhantomGladiator);
     
     public readonly static Job Dancer = new(JobId.Dancer, PlayerStatus.PhantomDancer);
+
+    public readonly static Job Ninja = new(JobId.Ninja, PlayerStatus.PhantomNinja);
+
+    public readonly static Job WhiteMage = new(JobId.WhiteMage, PlayerStatus.PhantomWhiteMage);
+
+    public readonly static Job BlackMage = new(JobId.BlackMage, PlayerStatus.PhantomBlackMage);
+
+    public readonly static Job Dragoon = new(JobId.Dragoon, PlayerStatus.PhantomDragoon);
+
+    public readonly static Job Summoner = new(JobId.Summoner, PlayerStatus.PhantomSummoner);
+
+    public readonly static Job BlueMage = new(JobId.BlueMage, PlayerStatus.PhantomBlueMage);
+
+    public readonly static Job RedMage = new(JobId.RedMage, PlayerStatus.PhantomRedMage);
+
+    public readonly static Job Necromancer = new(JobId.Necromancer, PlayerStatus.PhantomNecromancer);
 }

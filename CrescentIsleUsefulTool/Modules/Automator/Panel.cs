@@ -39,7 +39,7 @@ public class Panel
                 ImGui.SameLine();
                 ImGui.TextWrapped(module.automator.RuntimeStatus);
             },
-            "マジックポット → CE → FATE の優先順で移動します。",
+            $"優先順位：{GetPrioritySummary(module)}",
             module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted
         );
     }
@@ -89,7 +89,12 @@ public class Panel
 
         ImGui.TextColored(
             !ceEnabled && !fateEnabled ? CrescentTheme.Warning : CrescentTheme.Muted,
-            !ceEnabled && !fateEnabled ? "CE・FATEともに無効：拠点待機" : "優先順位：マジックポット → CE → FATE");
+            !ceEnabled && !fateEnabled ? "CE・FATEともに無効：拠点待機" : $"優先順位：{GetPrioritySummary(module)}");
+    }
+
+    private static string GetPrioritySummary(AutomatorModule module)
+    {
+        return string.Join(" → ", module.Config.GetPriorityOrder().Select(priority => priority.ToJapaneseLabel()));
     }
 
     private static string GetActiveMode(AutomatorModule module)

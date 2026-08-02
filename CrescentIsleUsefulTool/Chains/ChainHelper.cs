@@ -57,7 +57,7 @@ public class ChainHelper
     {
         var config = new ReturnChainConfig
         {
-            ApproachAetheryte = Instance.Plugin.Config.TeleporterConfig.ApproachAetheryte,
+            ApproachAetheryte = true,
         };
 
         return ReturnChain(config);

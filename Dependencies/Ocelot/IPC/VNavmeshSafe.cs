@@ -49,6 +49,25 @@ public static class VNavmeshSafe
         }
     }
 
+    public static bool TryIsSimpleMovePathfinding(VNavmesh? vnav, out bool pathfinding)
+    {
+        pathfinding = false;
+        if (vnav?.IsReady() != true)
+        {
+            return false;
+        }
+
+        try
+        {
+            pathfinding = vnav.IsSimpleMoveInProgress();
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     public static bool TryStop(VNavmesh? vnav)
     {
         if (vnav?.IsReady() != true)

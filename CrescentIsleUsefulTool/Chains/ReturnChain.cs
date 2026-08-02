@@ -24,9 +24,10 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
     private bool performedDemiReturn = false;
 
+    public bool PerformedDemiReturn => performedDemiReturn;
+
     protected override Chain Create(Chain chain)
     {
-        performedDemiReturn = false;
         chain.BreakIf(() => Player.IsDead);
 
         var vnav = module.GetIPCSubscriber<VNavmesh>();
@@ -76,29 +77,115 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
     private Chain CreateDemiReturnChain(VNavmesh vnav)
     {
-        var chain = Chain.Create("DemiReturn");
-        if (config.WaitForStationaryDemiReturn)
-        {
-            chain.Then(_ => !VnavmeshIpc.IsMovementActive(vnav));
-            chain.BreakIf(() => !ShouldUseDemiReturn());
-        }
-        else
-        {
-            chain.RunIf(() => ShouldUseDemiReturn() && !VnavmeshIpc.IsMovementActive(vnav));
-        }
+        var returnRequestedAtUtc = DateTime.MinValue;
+        var lastActionRequestUtc = DateTime.MinValue;
+        var castFinishedAtUtc = DateTime.MinValue;
+        var castStarted = false;
+        var sawBetweenAreas = false;
 
-        chain = Actions.Return.CastOnChain(chain);
-        chain.WaitToCast()
-            .WaitToCycleCondition(ConditionFlag.BetweenAreas)
-            .Then(_ => performedDemiReturn = true);
-        return chain;
+        return Chain.Create("DemiReturn")
+            .BreakIf(() => !ShouldUseDemiReturn())
+            .Then(new TaskManagerTask(() =>
+            {
+                var betweenAreas = Svc.Condition[ConditionFlag.BetweenAreas] ||
+                                   Svc.Condition[ConditionFlag.BetweenAreas51];
+                if (betweenAreas)
+                {
+                    sawBetweenAreas = true;
+                    return false;
+                }
+
+                if (sawBetweenAreas)
+                {
+                    performedDemiReturn = true;
+                    return true;
+                }
+
+                // Demi-Déjion cannot be cast while mounted, in combat, moving,
+                // or while another action is being cast. Resolve those states
+                // here and keep retrying instead of timing out after one cast.
+                if (Svc.Condition[ConditionFlag.Mounted])
+                {
+                    if (DateTime.UtcNow - lastActionRequestUtc >= TimeSpan.FromSeconds(1))
+                    {
+                        Actions.TryUnmount();
+                        lastActionRequestUtc = DateTime.UtcNow;
+                    }
+
+                    return false;
+                }
+
+                if (Svc.Condition[ConditionFlag.InCombat])
+                {
+                    return false;
+                }
+
+                if (VnavmeshIpc.IsMovementActive(vnav))
+                {
+                    VnavmeshIpc.TryStop(vnav);
+                    return false;
+                }
+
+                if (Player.IsCasting)
+                {
+                    if (returnRequestedAtUtc != DateTime.MinValue)
+                    {
+                        castStarted = true;
+                    }
+
+                    return false;
+                }
+
+                if (castStarted)
+                {
+                    if (castFinishedAtUtc == DateTime.MinValue)
+                    {
+                        castFinishedAtUtc = DateTime.UtcNow;
+                    }
+
+                    // A cancelled cast never enters BetweenAreas. Reset after
+                    // a short grace period so Demi-Déjion is requested again.
+                    if (DateTime.UtcNow - castFinishedAtUtc < TimeSpan.FromSeconds(4))
+                    {
+                        return false;
+                    }
+
+                    castStarted = false;
+                    castFinishedAtUtc = DateTime.MinValue;
+                    returnRequestedAtUtc = DateTime.MinValue;
+                }
+
+                if (returnRequestedAtUtc != DateTime.MinValue &&
+                    DateTime.UtcNow - returnRequestedAtUtc > TimeSpan.FromSeconds(5))
+                {
+                    returnRequestedAtUtc = DateTime.MinValue;
+                }
+
+                if (returnRequestedAtUtc == DateTime.MinValue &&
+                    Actions.Return.CanCast() &&
+                    DateTime.UtcNow - lastActionRequestUtc >= TimeSpan.FromSeconds(1))
+                {
+                    Actions.Return.Cast();
+                    returnRequestedAtUtc = DateTime.UtcNow;
+                    lastActionRequestUtc = DateTime.UtcNow;
+                    Svc.Log.Info("Demi-Déjion cast requested.");
+                }
+
+                return false;
+            }, new TaskManagerConfiguration
+            {
+                TimeLimitMS = 120000,
+                ShowError = false,
+                TimeoutSilently = true,
+            }));
     }
 
     private bool ShouldUseDemiReturn()
     {
-        return config.AlwaysUseDemiReturn ||
+        return !performedDemiReturn &&
+               (config.AlwaysUseDemiReturn ||
                !ZoneData.IsNearBaseCamp() &&
-               (config.ForceReturn || GetCostToReturn() < GetCostToWalk());
+               (config.ForceReturn || GetCostToReturn() < GetCostToWalk()));
     }
 
     private Chain ApplyBuffs()
@@ -153,9 +240,19 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         return 5;
     }
 
+    public override int GetTimeout()
+    {
+        return 180000;
+    }
+
     public override TaskManagerConfiguration? Config()
     {
-        return new TaskManagerConfiguration { TimeLimitMS = 60000 };
+        return new TaskManagerConfiguration
+        {
+            TimeLimitMS = 180000,
+            ShowError = false,
+            TimeoutSilently = true,
+        };
     }
 
     private Vector3 GetAetherytePosition()

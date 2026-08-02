@@ -51,8 +51,14 @@ public class MagicPotModule : Module
             }
 
             var elapsed = Math.Max(0d, (DateTime.UtcNow - observed).TotalSeconds);
-            var cycle = Math.Max(1d, Math.Ceiling(elapsed / RespawnIntervalSeconds));
-            return observed.AddSeconds(cycle * RespawnIntervalSeconds);
+            var cycle = Math.Max(1d, Math.Floor(elapsed / RespawnIntervalSeconds));
+            var expected = observed.AddSeconds(cycle * RespawnIntervalSeconds);
+            // Keep the just-reached prediction visible briefly while the FATE
+            // list catches up instead of rolling to the following 30-minute
+            // cycle a fraction of a second before the spawn is observed.
+            return expected < DateTime.UtcNow.AddMinutes(-2)
+                ? expected.AddSeconds(RespawnIntervalSeconds)
+                : expected;
         }
     }
 

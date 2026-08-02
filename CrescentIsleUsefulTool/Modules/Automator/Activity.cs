@@ -195,11 +195,6 @@ public abstract class Activity
 
     private bool ShouldMountToPathfindTo(Vector3 destination)
     {
-        if (!module.PluginConfig.TeleporterConfig.ShouldMount)
-        {
-            return false;
-        }
-
         return Vector3.Distance(Player.Position, destination) > 20f;
     }
 

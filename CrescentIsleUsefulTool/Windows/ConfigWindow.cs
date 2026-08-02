@@ -62,6 +62,7 @@ public class ConfigWindow(Plugin primaryPlugin, Config config) : OcelotConfigWin
         var modules = Plugin.Modules.GetModulesByConfigOrder()
             .OfType<Module>()
             .Where(module => module.Config != null)
+            .Where(module => module.Config!.GetType().Name is not ("TeleporterConfig" or "CurrencyConfig" or "ExpConfig"))
             .ToList();
         selectedConfigModule ??= modules.FirstOrDefault();
 

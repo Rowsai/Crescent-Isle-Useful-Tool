@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using Ocelot.Config.Attributes;
 using Ocelot.Modules;
 
@@ -12,6 +14,47 @@ public class AutomatorConfig : ModuleConfig
     public Dictionary<uint, bool> NorthCriticalEncounters { get; set; } = [];
 
     public Dictionary<uint, bool> NorthFates { get; set; } = [];
+
+    public List<AutomationPriority> PriorityOrder { get; set; } =
+    [
+        AutomationPriority.MagicPot,
+        AutomationPriority.CriticalEncounter,
+        AutomationPriority.Fate,
+    ];
+
+    public IReadOnlyList<AutomationPriority> GetPriorityOrder()
+    {
+        var normalized = (PriorityOrder ?? [])
+            .Where(priority => Enum.IsDefined(priority))
+            .Distinct()
+            .ToList();
+
+        foreach (var priority in Enum.GetValues<AutomationPriority>())
+        {
+            if (!normalized.Contains(priority))
+            {
+                normalized.Add(priority);
+            }
+        }
+
+        PriorityOrder = normalized;
+        return PriorityOrder;
+    }
+
+    public bool MovePriority(AutomationPriority priority, int offset)
+    {
+        var order = GetPriorityOrder().ToList();
+        var currentIndex = order.IndexOf(priority);
+        var nextIndex = currentIndex + offset;
+        if (currentIndex < 0 || nextIndex < 0 || nextIndex >= order.Count)
+        {
+            return false;
+        }
+
+        (order[currentIndex], order[nextIndex]) = (order[nextIndex], order[currentIndex]);
+        PriorityOrder = order;
+        return true;
+    }
 
     [Checkbox]
     [Automation]

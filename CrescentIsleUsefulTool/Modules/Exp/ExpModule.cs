@@ -15,7 +15,7 @@ public class ExpModule(Plugin plugin, Config config) : Module(plugin, config)
 
     public override bool IsEnabled
     {
-        get => Config.IsPropertyEnabled(nameof(Config.Enabled));
+        get => true;
     }
 
     public readonly ExpTracker tracker = new();

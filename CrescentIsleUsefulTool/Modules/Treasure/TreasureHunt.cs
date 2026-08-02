@@ -63,6 +63,8 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     protected override bool RebuildRouteOnResume => ZoneData.IsInNorthHorn();
 
+    protected override bool RebuildRouteAfterUnreachable => ZoneData.IsInNorthHorn();
+
     protected override bool AlwaysUseDemiReturnAtRouteStart => ZoneData.IsInNorthHorn();
 
     protected override bool UpdateTreasureCountAtRouteStart => true;
@@ -324,10 +326,19 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     protected override void OnStepUnreachable(PathfinderStep step)
     {
-        if (ZoneData.IsInNorthHorn() && step.Type == PathfinderStepType.WalkToNode && step.NodeId != 0)
+        var targetNodeId = GetRecoveryTargetNodeId(step);
+        if (ZoneData.IsInNorthHorn() && targetNodeId != 0)
         {
-            unreachableNodeIds.Add(step.NodeId);
+            unreachableNodeIds.Add(targetNodeId);
         }
+    }
+
+    protected override string GetRouteRecoveryKey(PathfinderStep step)
+    {
+        var targetNodeId = GetRecoveryTargetNodeId(step);
+        return ZoneData.IsInNorthHorn() && targetNodeId != 0
+            ? $"NorthTreasure:{targetNodeId}"
+            : base.GetRouteRecoveryKey(step);
     }
 
     protected override void OnProgressReset()
@@ -377,6 +388,27 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
         {
             completedNodeIds.Add(nearest.Id);
         }
+    }
+
+    private uint GetRecoveryTargetNodeId(PathfinderStep failedStep)
+    {
+        if (failedStep.Type == PathfinderStepType.WalkToNode)
+        {
+            return failedStep.NodeId;
+        }
+
+        // A failed aethernet or turbulence segment belongs to the next chest
+        // in the fixed route. Associate retries with that chest so the first
+        // failure rebuilds the path and only a repeated failure skips it.
+        for (var index = stepIndex + 1; index < Steps.Count; index++)
+        {
+            if (Steps[index].Type == PathfinderStepType.WalkToNode)
+            {
+                return Steps[index].NodeId;
+            }
+        }
+
+        return 0;
     }
 
     private static uint CreateSyntheticNodeId(int index)

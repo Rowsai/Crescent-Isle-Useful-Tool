@@ -32,6 +32,12 @@ public abstract class Hunter
 {
     protected const float DISTANCE_TO_NODE_TO_USE = 2f;
 
+    private static readonly TimeSpan PathRequestTimeout = TimeSpan.FromSeconds(8);
+
+    private static readonly TimeSpan StationaryStallTimeout = TimeSpan.FromSeconds(12);
+
+    private static readonly TimeSpan DestinationProgressTimeout = TimeSpan.FromSeconds(35);
+
     protected StateManagerModule states;
 
     protected VNavmesh vnav;
@@ -81,6 +87,10 @@ public abstract class Hunter
     private bool movementPathStarted;
 
     private bool skipNextAethernetTeleport;
+
+    private bool rebuildingAfterUnreachableRoute;
+
+    private readonly Dictionary<string, int> routeRecoveryAttempts = [];
 
     private bool HasPausedProgress => !running && Steps.Count > 0 && stepIndex < Steps.Count;
 
@@ -178,6 +188,17 @@ public abstract class Hunter
 
     protected virtual void OnStepUnreachable(PathfinderStep step)
     {
+    }
+
+    /// <summary>
+    /// Opts a hunter into rebuilding the remaining route only after movement
+    /// validation has declared the current segment unreachable.
+    /// </summary>
+    protected virtual bool RebuildRouteAfterUnreachable => false;
+
+    protected virtual string GetRouteRecoveryKey(PathfinderStep step)
+    {
+        return $"{step.Type}:{step.NodeId}:{step.Aethernet}:{step.Position}";
     }
 
     protected virtual void OnProgressReset()
@@ -304,6 +325,12 @@ public abstract class Hunter
                     {
                         if (currentStepUnreachable)
                         {
+                            if (TryRebuildAfterUnreachable(step))
+                            {
+                                ResetMovementValidation();
+                                return;
+                            }
+
                             OnStepUnreachable(step);
                         }
                         else
@@ -313,16 +340,14 @@ public abstract class Hunter
 
                         ResetMovementValidation();
                         stepIndex++;
+                        if (step.Type == PathfinderStepType.ReturnToBaseCamp)
+                        {
+                            rebuildingAfterUnreachableRoute = false;
+                        }
                     }
                 })
                 .Wait(1000 / 60)
         );
-
-        var obj = GetValidObjects().FirstOrDefault(o => Vector3.Distance(Player.Position, o.Position) <= 5f);
-        if (obj != null)
-        {
-            StepProcessor.Submit(GetInteractionChain(obj));
-        }
     }
 
     public void Draw(Module<Plugin, Config> module)
@@ -439,12 +464,15 @@ public abstract class Hunter
         running = false;
         stepIndex = 0;
         Steps.Clear();
+        VnavmeshIpc.TryCancelAllPathfinds(vnav);
         VnavmeshIpc.TryStop(vnav);
         Plugin.Chain.Abort();
         StepProcessor.Abort();
         pathfinder = null;
         ResetMovementValidation();
         skipNextAethernetTeleport = false;
+        rebuildingAfterUnreachableRoute = false;
+        routeRecoveryAttempts.Clear();
     }
 
     public void ResetForTerritoryChange()
@@ -456,6 +484,7 @@ public abstract class Hunter
     {
         stopwatch.Stop();
         running = false;
+        VnavmeshIpc.TryCancelAllPathfinds(vnav);
         VnavmeshIpc.TryStop(vnav);
         Plugin.Chain.Abort();
         StepProcessor.Abort();
@@ -479,6 +508,7 @@ public abstract class Hunter
         stepIndex = 0;
         Steps.Clear();
         JSON = "";
+        VnavmeshIpc.TryCancelAllPathfinds(vnav);
         VnavmeshIpc.TryStop(vnav);
         Plugin.Chain.Abort();
         StepProcessor.Abort();
@@ -486,6 +516,8 @@ public abstract class Hunter
         runtimeStatus = "停止中";
         ResetMovementValidation();
         skipNextAethernetTeleport = false;
+        rebuildingAfterUnreachableRoute = false;
+        routeRecoveryAttempts.Clear();
         OnProgressReset();
     }
 
@@ -574,7 +606,7 @@ public abstract class Hunter
         {
             ApproachAetheryte = true,
             ForceReturn = ZoneData.IsInNorthHorn(),
-            AlwaysUseDemiReturn = AlwaysUseDemiReturnAtRouteStart,
+            AlwaysUseDemiReturn = AlwaysUseDemiReturnAtRouteStart && !rebuildingAfterUnreachableRoute,
             WaitForStationaryDemiReturn = AlwaysUseDemiReturnAtRouteStart,
             ApplyBuffs = true,
             UpdateTreasureCount = UpdateTreasureCountAtRouteStart,
@@ -699,7 +731,7 @@ public abstract class Hunter
         {
             if (!VnavmeshIpc.TryPathfind(vnav, Player.Position, reachablePathEndpoint, false, out reachablePathTask) || reachablePathTask == null)
             {
-                return DateTime.UtcNow - reachablePathRequestedAtUtc > TimeSpan.FromSeconds(15)
+                return DateTime.UtcNow - reachablePathRequestedAtUtc > PathRequestTimeout
                     ? ReachableMovementState.Unreachable
                     : ReachableMovementState.Pending;
             }
@@ -710,7 +742,7 @@ public abstract class Hunter
 
         if (!reachablePathTask.IsCompleted)
         {
-            return DateTime.UtcNow - reachablePathRequestedAtUtc > TimeSpan.FromSeconds(15)
+            return DateTime.UtcNow - reachablePathRequestedAtUtc > PathRequestTimeout
                 ? ReachableMovementState.Unreachable
                 : ReachableMovementState.Pending;
         }
@@ -764,7 +796,7 @@ public abstract class Hunter
         VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
         if (!isRunning && !Player.IsMoving)
         {
-            return movementPathStarted && DateTime.UtcNow - lastMovementProgressAtUtc > TimeSpan.FromSeconds(20);
+            return movementPathStarted && DateTime.UtcNow - lastMovementProgressAtUtc > StationaryStallTimeout;
         }
 
         var moved = Vector3.Distance(Player.Position, lastMovementPosition);
@@ -780,8 +812,8 @@ public abstract class Hunter
             lastDestinationProgressAtUtc = DateTime.UtcNow;
         }
 
-        return DateTime.UtcNow - lastMovementProgressAtUtc > TimeSpan.FromSeconds(20) ||
-               DateTime.UtcNow - lastDestinationProgressAtUtc > TimeSpan.FromSeconds(90);
+        return DateTime.UtcNow - lastMovementProgressAtUtc > StationaryStallTimeout ||
+               DateTime.UtcNow - lastDestinationProgressAtUtc > DestinationProgressTimeout;
     }
 
     private void ResetMovementProgress(float currentDistance = float.MaxValue)
@@ -805,6 +837,40 @@ public abstract class Hunter
         runtimeStatus = message;
         VnavmeshIpc.TryStop(vnav);
         Svc.Log.Warning(message);
+    }
+
+    private bool TryRebuildAfterUnreachable(PathfinderStep failedStep)
+    {
+        if (!RebuildRouteAfterUnreachable)
+        {
+            return false;
+        }
+
+        var key = GetRouteRecoveryKey(failedStep);
+        var attempt = routeRecoveryAttempts.GetValueOrDefault(key) + 1;
+        routeRecoveryAttempts[key] = attempt;
+
+        // First failure rebuilds from the current set of remaining locations.
+        // A repeated failure of the same destination is recorded as unreachable
+        // before rebuilding again so the hunt cannot loop forever.
+        if (attempt >= 2)
+        {
+            OnStepUnreachable(failedStep);
+        }
+
+        VnavmeshIpc.TryCancelAllPathfinds(vnav);
+        VnavmeshIpc.TryStop(vnav);
+        StepProcessor.Clear();
+        Steps.Clear();
+        stepIndex = 0;
+        pathfinder = null;
+        skipNextAethernetTeleport = false;
+        rebuildingAfterUnreachableRoute = true;
+        runtimeStatus = attempt == 1
+            ? "進行不能を検知したため、残り座標の経路を再作成しています。"
+            : "同じ区間が再び進行不能になったため、対象を除外して経路を再作成しています。";
+        Svc.Log.Warning($"Treasure route recovery requested after unreachable segment (attempt {attempt}, key {key}).");
+        return true;
     }
 
     private void ResetMovementValidation()
