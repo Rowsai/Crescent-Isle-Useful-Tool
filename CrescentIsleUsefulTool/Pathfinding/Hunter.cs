@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
-using System.Text.Json;
 using System.Threading.Tasks;
 using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
@@ -26,7 +25,6 @@ using Ocelot.Ui;
 using Ocelot.Chain;
 using Ocelot.IPC;
 using Ocelot.Modules;
-using TextCopy;
 
 namespace CrescentIsleUsefulTool.Pathfinding;
 
@@ -112,8 +110,6 @@ public abstract class Hunter
     {
         get => Steps[stepIndex];
     }
-
-    protected string JSON = "";
 
     protected ChainQueue StepProcessor
     {
@@ -308,19 +304,6 @@ public abstract class Hunter
                         stepIndex = 0;
                         ResetMovementValidation();
                     })
-                    .Then(_ =>
-                    {
-                        var options = new JsonSerializerOptions
-                        {
-                            WriteIndented = true,
-                            Converters =
-                            {
-                                new PathfinderStepConverter(),
-                            },
-                        };
-
-                        JSON = JsonSerializer.Serialize(Steps, options);
-                    })
                     .Then(_ => pathfinder = null);
             });
 
@@ -385,52 +368,13 @@ public abstract class Hunter
     {
         CrescentTheme.Card($"Hunter_{GetType().Name}", module.T("panel.hunt.title"), () =>
         {
-            if (ImGui.Button(running ? I18N.T("generic.label.stop") : I18N.T("generic.label.start")))
-            {
-                if (running)
-                {
-                    Pause();
-                }
-                else
-                {
-                    TryStartHunt(disableAutomationMode: true, runStartupPreparation: true);
-                }
-            }
-
-            if (HasPausedProgress)
-            {
-                ImGui.SameLine();
-                if (ImGui.Button("最初から##ResetHunterRoute"))
-                {
-                    ResetProgress();
-                }
-
-                if (ImGui.IsItemHovered())
-                {
-                    ImGui.SetTooltip("保存した巡回位置を破棄し、次回は新しい経路を作成します。");
-                }
-            }
-
-            if (running || HasPausedProgress)
-            {
-                ImGui.Spacing();
-                ImGui.TextDisabled("実行状態");
-                ImGui.TextWrapped(HasPausedProgress ? $"一時停止中（{stepIndex}/{Steps.Count}から再開できます）" : runtimeStatus);
-            }
+            ImGui.TextDisabled("実行状態");
+            ImGui.TextWrapped(HasPausedProgress
+                ? $"一時停止中（{stepIndex}/{Steps.Count}から再開できます）"
+                : runtimeStatus);
 
             if (stopwatch.Elapsed > TimeSpan.Zero)
             {
-                ImGui.SameLine();
-                if (ImGui.Button(I18N.T("hunter.export.label")))
-                {
-                    ClipboardService.SetText(JSON);
-                }
-
-                if (ImGui.IsItemHovered())
-                {
-                    ImGui.SetTooltip(I18N.T("hunter.export.tooltip"));
-                }
-
                 ImGui.TextDisabled(I18N.T("hunter.elapsed"));
                 ImGui.SameLine();
                 ImGui.TextColored(CrescentTheme.AccentSoft, $"{stopwatch.Elapsed:mm\\:ss}");
@@ -452,6 +396,21 @@ public abstract class Hunter
                 }
             }
         }, GetRouteDescription());
+    }
+
+    public bool HasPausedRoute => HasPausedProgress;
+
+    public bool StartManually()
+    {
+        return TryStartHunt(disableAutomationMode: true, runStartupPreparation: true);
+    }
+
+    public void PauseFromMainWindow()
+    {
+        if (running)
+        {
+            Pause();
+        }
     }
 
     public bool StartForAutomation(bool runStartupPreparation)
@@ -595,7 +554,6 @@ public abstract class Hunter
         running = false;
         stepIndex = 0;
         Steps.Clear();
-        JSON = "";
         VnavmeshIpc.TryCancelAllPathfinds(vnav);
         VnavmeshIpc.TryStop(vnav);
         Plugin.Chain.Abort();

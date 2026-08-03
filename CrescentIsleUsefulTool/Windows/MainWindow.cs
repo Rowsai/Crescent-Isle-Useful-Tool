@@ -211,9 +211,79 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
     private void DrawOverview(RenderContext context)
     {
         RenderModule<AutomatorModule>(context);
+        DrawTreasureHuntOverviewControl();
         DrawResponsiveColumns(
             () => RenderModule<StateManagerModule>(context),
             () => RenderModule<MagicPotModule>(context));
+    }
+
+    private void DrawTreasureHuntOverviewControl()
+    {
+        var treasure = Plugin.Modules.GetModule<TreasureModule>();
+        var hunter = treasure.Hunter;
+        CrescentTheme.Card(
+            "TreasureHuntOverviewControl",
+            "トレジャーハンター",
+            () =>
+            {
+                var modeEnabled = treasure.Config.ShouldEnableTreasureHunt;
+                var status = hunter.IsRunning
+                    ? "実行中"
+                    : modeEnabled && hunter.HasPausedRoute
+                        ? "一時停止中"
+                        : modeEnabled
+                            ? "開始待機中"
+                            : "停止中";
+                CrescentTheme.Status(
+                    "宝箱自動モード",
+                    status,
+                    hunter.IsRunning
+                        ? CrescentTheme.Success
+                        : modeEnabled
+                            ? CrescentTheme.Warning
+                            : CrescentTheme.Muted);
+                ImGui.TextWrapped(hunter.RuntimeStatus);
+                ImGui.Spacing();
+
+                var buttonLabel = modeEnabled
+                    ? "トレジャーハントを停止##OverviewTreasureHunt"
+                    : hunter.HasPausedRoute
+                        ? "トレジャーハントを再開##OverviewTreasureHunt"
+                        : "トレジャーハントを実施##OverviewTreasureHunt";
+                if (!ImGui.Button(buttonLabel, new Vector2(-1f, 34f)))
+                {
+                    return;
+                }
+
+                if (modeEnabled)
+                {
+                    treasure.Config.EnableTreasureHunt = false;
+                    hunter.PauseFromMainWindow();
+                    treasure.PluginConfig.Save();
+                    return;
+                }
+
+                treasure.Config.Enabled = true;
+                treasure.Config.EnableTreasureHunt = true;
+                treasure.PluginConfig.Save();
+                var automator = Plugin.Modules.GetModule<AutomatorModule>();
+                if (automator.Config.Enabled)
+                {
+                    var teleporter = Plugin.Modules.GetModule<TeleporterModule>().teleporter;
+                    if (automator.automator.Activity == null &&
+                        !automator.automator.IsWaitingForMagicPot &&
+                        !teleporter.IsCompletionReturnPending)
+                    {
+                        hunter.StartForAutomation(runStartupPreparation: true);
+                    }
+                }
+                else
+                {
+                    hunter.StartManually();
+                }
+            },
+            "通常宝箱の巡回開始・停止は概要から操作します。",
+            TreasureModule.Bronze);
     }
 
     private void DrawActivityPage(RenderContext context)

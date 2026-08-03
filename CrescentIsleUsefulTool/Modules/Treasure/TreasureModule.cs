@@ -63,11 +63,7 @@ public class TreasureModule(Plugin _plugin, Config config) : Module(_plugin, con
     public override bool RenderMainUi(RenderContext context)
     {
         panel.Draw(this);
-
-        if (Config.ShouldEnableTreasureHunt)
-        {
-            Hunter.Draw(this);
-        }
+        Hunter.Draw(this);
 
         return true;
     }
