@@ -92,6 +92,8 @@ public abstract class Hunter
 
     private bool currentStepUnreachable;
 
+    private StepFailureReason currentStepFailureReason;
+
     private bool movementPathStarted;
 
     private bool skipNextAethernetTeleport;
@@ -145,6 +147,8 @@ public abstract class Hunter
     {
         return config.DetectionRange;
     }
+
+    protected StepFailureReason CurrentStepFailureReason => currentStepFailureReason;
 
     protected virtual float GetInactiveNodeConfirmationRange()
     {
@@ -200,6 +204,14 @@ public abstract class Hunter
 
     protected virtual void OnStepUnreachable(PathfinderStep step)
     {
+    }
+
+    protected enum StepFailureReason
+    {
+        None,
+        Unreachable,
+        Stalled,
+        UnsafeEnemy,
     }
 
     /// <summary>
@@ -576,9 +588,17 @@ public abstract class Hunter
             : null;
         var movementDestination = obj?.Position ?? destination;
 
+        if (TryGetOverLevelEnemyNear(movementDestination, out var nearbyEnemy))
+        {
+            MarkCurrentStepUnreachable(
+                $"{nearbyEnemy}が宝箱座標付近にいるため、この地点は巡回対象から除外します。",
+                StepFailureReason.UnsafeEnemy);
+            return true;
+        }
+
         if (TryGetUnsafeEnemyOnCurrentRoute(movementDestination, out var unsafeEnemy))
         {
-            MarkCurrentStepUnreachable(unsafeEnemy);
+            MarkCurrentStepUnreachable(unsafeEnemy, StepFailureReason.UnsafeEnemy);
             return true;
         }
 
@@ -590,19 +610,19 @@ public abstract class Hunter
             var movementState = StartReachableMovement(movementDestination);
             if (movementState == ReachableMovementState.UnsafeEnemy)
             {
-                MarkCurrentStepUnreachable($"{unsafeEnemyDescription}が経路上にいるため、この宝箱座標へは近づきません。");
+                MarkCurrentStepUnreachable($"{unsafeEnemyDescription}が経路上にいるため、この宝箱座標へは近づきません。", StepFailureReason.UnsafeEnemy);
                 return true;
             }
             if (movementState == ReachableMovementState.Unreachable)
             {
-                MarkCurrentStepUnreachable("ナビメッシュ上で到達できない宝箱座標をスキップしました。");
+                MarkCurrentStepUnreachable("ナビメッシュ上で到達できない宝箱座標をスキップしました。", StepFailureReason.Unreachable);
                 return true;
             }
         }
 
         if (HasMovementStalled(distance))
         {
-            MarkCurrentStepUnreachable("移動の進捗がないため、この宝箱座標をスキップしました。");
+            MarkCurrentStepUnreachable("移動の進捗がないため、この宝箱座標をスキップしました。", StepFailureReason.Stalled);
             return true;
         }
 
@@ -688,7 +708,7 @@ public abstract class Hunter
 
         if (TryGetUnsafeEnemyOnCurrentRoute(destination, out var unsafeEnemy))
         {
-            MarkCurrentStepUnreachable(unsafeEnemy);
+            MarkCurrentStepUnreachable(unsafeEnemy, StepFailureReason.UnsafeEnemy);
             return true;
         }
 
@@ -706,19 +726,19 @@ public abstract class Hunter
             var movementState = StartReachableMovement(destination);
             if (movementState == ReachableMovementState.UnsafeEnemy)
             {
-                MarkCurrentStepUnreachable($"{unsafeEnemyDescription}が経路上にいるため、この魔導通路へは近づきません。");
+                MarkCurrentStepUnreachable($"{unsafeEnemyDescription}が経路上にいるため、この魔導通路へは近づきません。", StepFailureReason.UnsafeEnemy);
                 return true;
             }
             if (movementState == ReachableMovementState.Unreachable)
             {
-                MarkCurrentStepUnreachable("魔導通路まで到達できないため、この移動区間を中止しました。");
+                MarkCurrentStepUnreachable("魔導通路まで到達できないため、この移動区間を中止しました。", StepFailureReason.Unreachable);
                 return true;
             }
         }
 
         if (HasMovementStalled(distance))
         {
-            MarkCurrentStepUnreachable("魔導通路への移動が停止したため、この移動区間を中止しました。");
+            MarkCurrentStepUnreachable("魔導通路への移動が停止したため、この移動区間を中止しました。", StepFailureReason.Stalled);
             return true;
         }
 
@@ -736,7 +756,7 @@ public abstract class Hunter
         if (skipNextAethernetTeleport)
         {
             skipNextAethernetTeleport = false;
-            MarkCurrentStepUnreachable("到達できなかった魔導通路からの転送をスキップしました。");
+            MarkCurrentStepUnreachable("到達できなかった魔導通路からの転送をスキップしました。", StepFailureReason.Unreachable);
             return true;
         }
 
@@ -751,7 +771,7 @@ public abstract class Hunter
 
         if (TryGetUnsafeEnemyOnCurrentRoute(trigger, out var unsafeEnemy))
         {
-            MarkCurrentStepUnreachable(unsafeEnemy);
+            MarkCurrentStepUnreachable(unsafeEnemy, StepFailureReason.UnsafeEnemy);
             return true;
         }
         distance = Player.DistanceTo(trigger);
@@ -768,19 +788,19 @@ public abstract class Hunter
             var movementState = StartReachableMovement(trigger);
             if (movementState == ReachableMovementState.UnsafeEnemy)
             {
-                MarkCurrentStepUnreachable($"{unsafeEnemyDescription}が経路上にいるため、この乱気流へは近づきません。");
+                MarkCurrentStepUnreachable($"{unsafeEnemyDescription}が経路上にいるため、この乱気流へは近づきません。", StepFailureReason.UnsafeEnemy);
                 return true;
             }
             if (movementState == ReachableMovementState.Unreachable)
             {
-                MarkCurrentStepUnreachable("乱気流まで到達できないため、この経路をスキップしました。");
+                MarkCurrentStepUnreachable("乱気流まで到達できないため、この経路をスキップしました。", StepFailureReason.Unreachable);
                 return true;
             }
         }
 
         if (HasMovementStalled(distance))
         {
-            MarkCurrentStepUnreachable("乱気流への移動が停止したため、この経路をスキップしました。");
+            MarkCurrentStepUnreachable("乱気流への移動が停止したため、この経路をスキップしました。", StepFailureReason.Stalled);
             return true;
         }
 
@@ -931,6 +951,32 @@ public abstract class Hunter
         return false;
     }
 
+    private bool TryGetOverLevelEnemyNear(Vector3 destination, out string description)
+    {
+        const float avoidanceRadius = 25f;
+        var enemy = TargetHelper.Enemies
+            .Where(candidate => candidate.IsValid() && candidate.IsTargetable && !candidate.IsDead)
+            .Where(candidate => candidate.Level > config.MaxLevel)
+            .Where(candidate => Vector3.Distance(candidate.Position, destination) < avoidanceRadius)
+            .OrderBy(candidate => Vector3.Distance(candidate.Position, destination))
+            .FirstOrDefault();
+        if (enemy == null)
+        {
+            description = "";
+            return false;
+        }
+
+        var name = enemy.Name.TextValue;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = "敵";
+        }
+
+        description = $"Lv.{enemy.Level} {name}（設定上限 Lv.{config.MaxLevel}）";
+        unsafeEnemyDescription = $"Lv.{enemy.Level} {name}";
+        return true;
+    }
+
     private bool HasMovementStalled(float currentDistance)
     {
         if (movementProgressStepIndex != stepIndex)
@@ -971,9 +1017,10 @@ public abstract class Hunter
         lastDestinationProgressAtUtc = DateTime.UtcNow;
     }
 
-    private void MarkCurrentStepUnreachable(string message)
+    private void MarkCurrentStepUnreachable(string message, StepFailureReason reason = StepFailureReason.Unreachable)
     {
         currentStepUnreachable = true;
+        currentStepFailureReason = reason;
         if (CurrentStep.Type == PathfinderStepType.WalkToAethernet)
         {
             // A travel segment stores the destination aethernet on its next
@@ -999,7 +1046,7 @@ public abstract class Hunter
         // First failure rebuilds from the current set of remaining locations.
         // A repeated failure of the same destination is recorded as unreachable
         // before rebuilding again so the hunt cannot loop forever.
-        if (attempt >= 2)
+        if (currentStepFailureReason == StepFailureReason.UnsafeEnemy || attempt >= 2)
         {
             OnStepUnreachable(failedStep);
         }
@@ -1036,6 +1083,7 @@ public abstract class Hunter
         lastMovementProgressAtUtc = DateTime.MinValue;
         lastDestinationProgressAtUtc = DateTime.MinValue;
         currentStepUnreachable = false;
+        currentStepFailureReason = StepFailureReason.None;
         movementPathStarted = false;
     }
 

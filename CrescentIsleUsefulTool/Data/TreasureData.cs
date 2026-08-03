@@ -5,6 +5,16 @@ namespace CrescentIsleUsefulTool.Data;
 
 public static class TreasureData
 {
+    // Magic-pot reward coffers are EventObj rows handled exclusively by the
+    // MagicPot module. Keep the IDs here as the single exclusion source used
+    // by normal treasure tracking and layout validation.
+    private static readonly HashSet<uint> MagicPotCofferBaseIds =
+    [
+        2009530,
+        2009531,
+        2009532,
+    ];
+
     public const uint BronzeSgbId = 1596;
 
     public const uint SilverSgbId = 1597;
@@ -14,6 +24,11 @@ public static class TreasureData
     public static bool IsRandomCofferType(uint sgbId)
     {
         return sgbId is BronzeSgbId or SilverSgbId;
+    }
+
+    public static bool IsMagicPotCofferBaseId(uint baseId)
+    {
+        return MagicPotCofferBaseIds.Contains(baseId);
     }
 
     public readonly static Dictionary<uint, uint> Levels = new()

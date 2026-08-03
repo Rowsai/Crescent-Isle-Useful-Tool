@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Threading.Tasks;
 using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
+using CrescentIsleUsefulTool.Enums;
 using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Pathfinding;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -15,51 +16,61 @@ using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using Ocelot.Chain;
-using Ocelot.Chain.ChainEx;
 using ObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
 
 namespace CrescentIsleUsefulTool.Modules.Treasure;
 
 public class TreasureHunt(TreasureModule module) : Hunter(module)
 {
-    // North Horn's internal planmap contains 68 random-coffer placements.
-    // Nine belong to subterranean spaces below this elevation; the surface
-    // route deliberately excludes them.
+    // North Horn stores its underground map below the surface planmap. This
+    // threshold is applied only after a layout row has been proven to be a
+    // bronze/silver random coffer, so unrelated Treasure instances cannot
+    // inflate the underground count.
     private const float UndergroundElevationCeiling = -10f;
 
-    private List<TreasureData.TreasureDatum> Treasure = [];
+    private List<TreasureData.TreasureDatum> treasure = [];
 
     private readonly HashSet<uint> completedNodeIds = [];
 
     private readonly HashSet<uint> unreachableNodeIds = [];
 
-    private int countRevisionAtRouteStart;
+    private readonly HashSet<uint> unsafeNodeIds = [];
 
-    private bool awaitingRouteStartCount;
+    private readonly Dictionary<uint, TreasureType> openedNodeTypes = [];
 
-    public int ExtractedLocationCount => Treasure.Count;
+    public int ExtractedLocationCount => treasure.Count;
 
-    public int ExtractedBronzeCount => Treasure.Count(item => item.Type == TreasureData.BronzeSgbId);
+    public int ExtractedBronzeCount => treasure.Count(item => item.Type == TreasureData.BronzeSgbId);
 
-    public int ExtractedSilverCount => Treasure.Count(item => item.Type == TreasureData.SilverSgbId);
+    public int ExtractedSilverCount => treasure.Count(item => item.Type == TreasureData.SilverSgbId);
+
+    public int InternalRandomCofferLocationCount { get; private set; }
+
+    public int InternalBronzeLocationCount { get; private set; }
+
+    public int InternalSilverLocationCount { get; private set; }
 
     public int ExcludedUndergroundLocationCount { get; private set; }
 
-    public int CompletedLocationCount => Treasure.Count(item => completedNodeIds.Contains(item.Id));
+    public int ExcludedMagicPotLocationCount { get; private set; }
 
-    public int UnreachableLocationCount => Treasure.Count(item => unreachableNodeIds.Contains(item.Id));
+    public int CompletedLocationCount => treasure.Count(item => completedNodeIds.Contains(item.Id));
 
-    public int RemainingLocationCount => Math.Max(0, Treasure.Count - CompletedLocationCount - UnreachableLocationCount);
+    public int UnreachableLocationCount => treasure.Count(item => unreachableNodeIds.Contains(item.Id));
 
-    public int? RouteStartRemainingChestCount { get; private set; }
+    public int UnsafeLocationCount => treasure.Count(item => unsafeNodeIds.Contains(item.Id));
 
-    public int? RouteStartBronzeChestCount { get; private set; }
+    public int RemainingLocationCount => Math.Max(
+        0,
+        treasure.Count - CompletedLocationCount - UnreachableLocationCount - UnsafeLocationCount);
 
-    public int? RouteStartSilverChestCount { get; private set; }
+    public int HunterOpenedBronzeCount => openedNodeTypes.Count(item => item.Value == TreasureType.Bronze);
 
-    public int SurfaceOpenedThisRun { get; private set; }
+    public int HunterOpenedSilverCount => openedNodeTypes.Count(item => item.Value == TreasureType.Silver);
 
-    public bool SurfaceCountValidationCompleted { get; private set; }
+    public int SurfaceOpenedThisRun => HunterOpenedBronzeCount + HunterOpenedSilverCount;
+
+    public int CheckedWithoutCofferCount => Math.Max(0, CompletedLocationCount - SurfaceOpenedThisRun);
 
     protected override bool RebuildRouteOnResume => ZoneData.IsInNorthHorn();
 
@@ -67,66 +78,71 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     protected override float GetInactiveNodeConfirmationRange()
     {
-        // North Horn must actually reach each extracted placement before it
-        // can be counted as absent; object-table streaming is not guaranteed
-        // at the configurable 75m detection range.
-        return ZoneData.IsInNorthHorn() ? 6f : base.GetInactiveNodeConfirmationRange();
-    }
-
-    public void UpdateCountValidation()
-    {
-        if (!awaitingRouteStartCount ||
-            !module.Tracker.CountInitialised ||
-            module.Tracker.CountRevision <= countRevisionAtRouteStart)
-        {
-            return;
-        }
-
-        RouteStartRemainingChestCount = module.Tracker.RemainingChests;
-        RouteStartBronzeChestCount = module.Tracker.BronzeChests;
-        RouteStartSilverChestCount = module.Tracker.SilverChests;
-        awaitingRouteStartCount = false;
-        Svc.Log.Info($"Magi Treasuresight confirmed {RouteStartRemainingChestCount} remaining coffers at route start.");
+        // An absent/already-opened placement is accepted only after entering
+        // the user-configured object-detection range.
+        return ZoneData.IsInNorthHorn() ? GetDetectionRange() : base.GetInactiveNodeConfirmationRange();
     }
 
     protected override IEnumerable<IGameObject> GetValidObjects()
     {
-        return Svc.Objects
-            .Where(o => o is
-            {
-                ObjectKind: ObjectKind.Treasure,
-                IsDead: false,
-                IsTargetable: true,
-            } && o.IsValid() && IsRandomCoffer(o));
+        return Svc.Objects.Where(obj => obj is
+        {
+            ObjectKind: ObjectKind.Treasure,
+            IsDead: false,
+            IsTargetable: true,
+        } && obj.IsValid() && IsRandomCoffer(obj));
     }
 
     protected override Vector3 GetDestinationForCurrentStep()
     {
-        var treasure = Treasure.FirstOrDefault(item => item.Id == CurrentStep.NodeId);
-        if (treasure.Id == CurrentStep.NodeId)
+        var datum = treasure.FirstOrDefault(item => item.Id == CurrentStep.NodeId);
+        if (datum.Id == CurrentStep.NodeId)
         {
-            return treasure.Position;
+            return datum.Position;
         }
 
         Svc.Log.Warning($"Treasure route node {CurrentStep.NodeId} is no longer present; skipping it safely.");
         return Player.Position;
     }
 
-    protected override unsafe IPathfinder CreatePathfinder()
+    protected override IPathfinder CreatePathfinder()
     {
-        Treasure.Clear();
-        ExcludedUndergroundLocationCount = 0;
+        try
+        {
+            return CreatePathfinderFromActiveLayout();
+        }
+        catch (Exception exception)
+        {
+            treasure = [];
+            ResetInternalLayoutStatistics();
+            if (EzThrottler.Throttle("TreasureLayoutExtractionError", 10000))
+            {
+                Svc.Log.Error(exception, "Treasure layout extraction failed; keeping the hunter idle and retrying safely.");
+            }
+
+            return CreateEmptyPathfinder();
+        }
+    }
+
+    private unsafe IPathfinder CreatePathfinderFromActiveLayout()
+    {
+        var extracted = new List<TreasureData.TreasureDatum>();
+        ResetInternalLayoutStatistics();
+
         var layoutWorld = LayoutWorld.Instance();
         var layout = layoutWorld == null ? null : layoutWorld->ActiveLayout;
         if (layout == null)
         {
-            Svc.Log.Warning("No active layout");
+            Svc.Log.Warning("No active layout; treasure extraction will retry.");
+            treasure = [];
             return CreateEmptyPathfinder();
         }
 
-        if (!layout->InstancesByType.TryGetValue(InstanceType.Treasure, out var mapPtr, false) || mapPtr.Value == null)
+        if (!layout->InstancesByType.TryGetValue(InstanceType.Treasure, out var mapPtr, false) ||
+            mapPtr.Value == null)
         {
-            Svc.Log.Warning("No active treasure map");
+            Svc.Log.Warning("No active Treasure layout map; treasure extraction will retry.");
+            treasure = [];
             return CreateEmptyPathfinder();
         }
 
@@ -138,21 +154,28 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
             }
 
             var transform = instance->GetTransformImpl();
-            var position = transform->Translation;
-            if (position.Y <= UndergroundElevationCeiling)
+            if (transform == null)
             {
-                if (ZoneData.IsInNorthHorn())
-                {
-                    ExcludedUndergroundLocationCount++;
-                }
-
                 continue;
             }
 
-            // Treasure instances are GameObjectLayoutInstance values. Use the
-            // generated field instead of a version-sensitive raw +0x30 read.
-            var treasureRowId = ((GameObjectLayoutInstance*)instance)->BaseId;
-            if (!Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>().TryGetRow(treasureRowId, out var treasureRow))
+            var position = transform->Translation;
+            if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) || !float.IsFinite(position.Z))
+            {
+                continue;
+            }
+
+            // InstanceType.Treasure entries are GameObjectLayoutInstance
+            // values. BaseId is an Excel Treasure row, never a route ID.
+            var treasureRowId = ((TreasureLayoutInstance*)instance)->BaseId;
+            if (TreasureData.IsMagicPotCofferBaseId(treasureRowId))
+            {
+                ExcludedMagicPotLocationCount++;
+                continue;
+            }
+
+            if (!Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>()
+                    .TryGetRow(treasureRowId, out var treasureRow))
             {
                 continue;
             }
@@ -163,46 +186,84 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                 continue;
             }
 
-            // BaseId identifies the coffer type, not the placement. North Horn
-            // reuses the same BaseId at many coordinates, so the layout's
-            // stable InstanceKey is the route node ID.
+            InternalRandomCofferLocationCount++;
+            if (sgbId == TreasureData.BronzeSgbId)
+            {
+                InternalBronzeLocationCount++;
+            }
+            else
+            {
+                InternalSilverLocationCount++;
+            }
+
+            if (ZoneData.IsInNorthHorn() && position.Y <= UndergroundElevationCeiling)
+            {
+                ExcludedUndergroundLocationCount++;
+                continue;
+            }
+
+            // North Horn reuses the same Treasure row at many placements. The
+            // layout InstanceKey identifies each coordinate. A synthetic ID is
+            // used only when malformed or duplicated internal data is observed.
             var nodeId = treasureRowId;
             if (ZoneData.IsInNorthHorn())
             {
                 nodeId = instance->Id.InstanceKey;
-                if (nodeId == 0 || Treasure.Any(item => item.Id == nodeId))
+                if (nodeId == 0 || extracted.Any(item => item.Id == nodeId))
                 {
-                    nodeId = CreateSyntheticNodeId(Treasure.Count);
-                    while (Treasure.Any(item => item.Id == nodeId))
+                    nodeId = CreateSyntheticNodeId(extracted.Count);
+                    while (extracted.Any(item => item.Id == nodeId))
                     {
                         nodeId++;
                     }
                 }
             }
 
-            Treasure.Add(new TreasureData.TreasureDatum(nodeId, position, sgbId));
+            extracted.Add(new TreasureData.TreasureDatum(nodeId, position, sgbId));
         }
 
-        Treasure = (ZoneData.IsInNorthHorn()
-                ? Treasure
-                : Treasure.GroupBy(item => item.Id).Select(group => group.First()))
+        treasure = (ZoneData.IsInNorthHorn()
+                ? extracted
+                : extracted.GroupBy(item => item.Id).Select(group => group.First()))
             .OrderBy(item => item.Id)
             .ToList();
 
         Svc.Log.Info(
-            $"Extracted surface treasure placements from active layout: {Treasure.Count} total " +
-            $"({ExtractedBronzeCount} bronze, {ExtractedSilverCount} silver), " +
-            $"{ExcludedUndergroundLocationCount} underground placements excluded.");
+            $"Validated internal random-coffer placements: {InternalRandomCofferLocationCount} total " +
+            $"({InternalBronzeLocationCount} bronze, {InternalSilverLocationCount} silver); " +
+            $"surface route {ExtractedLocationCount} ({ExtractedBronzeCount} bronze, {ExtractedSilverCount} silver), " +
+            $"{ExcludedUndergroundLocationCount} actual underground random-coffer placements excluded, " +
+            $"{ExcludedMagicPotLocationCount} magic-pot placements excluded.");
 
         if (ZoneData.IsInNorthHorn())
         {
-            return new NorthHornPathfinder(Treasure, module.PluginConfig.PathfinderConfig.TeleportCost);
+            return new NorthHornPathfinder(treasure, module.PluginConfig.PathfinderConfig.TeleportCost);
         }
 
-        return new Pathfinder(Treasure, module.PluginConfig.PathfinderConfig.ReturnCost, module.PluginConfig.PathfinderConfig.TeleportCost);
+        return new Pathfinder(
+            treasure,
+            module.PluginConfig.PathfinderConfig.ReturnCost,
+            module.PluginConfig.PathfinderConfig.TeleportCost);
     }
 
-    protected override unsafe bool IsPathfinderDataReady()
+    protected override bool IsPathfinderDataReady()
+    {
+        try
+        {
+            return IsPathfinderDataReadyUnsafe();
+        }
+        catch (Exception exception)
+        {
+            if (EzThrottler.Throttle("TreasureLayoutReadinessError", 10000))
+            {
+                Svc.Log.Error(exception, "Treasure layout readiness check failed; retrying safely.");
+            }
+
+            return false;
+        }
+    }
+
+    private static unsafe bool IsPathfinderDataReadyUnsafe()
     {
         var layoutWorld = LayoutWorld.Instance();
         var layout = layoutWorld == null ? null : layoutWorld->ActiveLayout;
@@ -213,9 +274,9 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     protected override bool HasAvailablePathfinderNodes()
     {
-        return ZoneData.IsInNorthHorn()
-            ? Treasure.Any(item => !completedNodeIds.Contains(item.Id) && !unreachableNodeIds.Contains(item.Id))
-            : Treasure.Count > 0;
+        // Let an empty remaining-node set build an empty route and teardown
+        // cleanly instead of waiting forever after every location is excluded.
+        return treasure.Count > 0;
     }
 
     protected override Func<Chain> GetInteractionChain(IGameObject obj)
@@ -226,44 +287,63 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
         return () =>
         {
-            return Chain.Create()
-                .BreakIf(() => !IsCurrentCofferNear(entityId, position))
+            var interactionStartedAtUtc = DateTime.MinValue;
+            var interactionAttempts = 0;
+            var interactionSent = false;
+
+            return Chain.Create("Treasure.OpenRandomCoffer")
                 .Then(new TaskManagerTask(() =>
                 {
                     var current = GameObjectInteraction.Resolve(entityId);
-                    if (current == null || !current.IsTargetable || current.IsDead)
+                    if (interactionSent && !IsCurrentCofferNear(entityId, position))
                     {
+                        ConfirmOpenedCoffer(position, treasureType);
                         return true;
                     }
 
-                    if (!IsRandomCoffer(current) || Player.DistanceTo(current) > DISTANCE_TO_NODE_TO_USE)
+                    // Another player can open the object between detection and
+                    // this task. Record the coordinate as checked, but do not
+                    // report it as acquired by this hunter.
+                    if (current == null || !current.IsTargetable || current.IsDead || !IsRandomCoffer(current))
+                    {
+                        MarkCompletedLocation(position);
+                        return true;
+                    }
+
+                    if (interactionStartedAtUtc == DateTime.MinValue)
+                    {
+                        interactionStartedAtUtc = DateTime.UtcNow;
+                    }
+
+                    if (DateTime.UtcNow - interactionStartedAtUtc > TimeSpan.FromSeconds(7))
+                    {
+                        Svc.Log.Warning(
+                            $"Coffer interaction was not confirmed after {interactionAttempts} attempts; continuing safely.");
+                        MarkCompletedLocation(position);
+                        return true;
+                    }
+
+                    if (Player.DistanceTo(current) > DISTANCE_TO_NODE_TO_USE ||
+                        Player.IsMoving ||
+                        VnavmeshIpc.IsMovementActive(vnav) ||
+                        !EzThrottler.Throttle($"ChestInteract.{entityId}", 750))
                     {
                         return false;
                     }
 
-                    if (Player.IsMoving || VnavmeshIpc.IsMovementActive(vnav))
+                    if (GameObjectInteraction.TryInteract(entityId, DISTANCE_TO_NODE_TO_USE, position))
                     {
-                        return false;
+                        interactionAttempts++;
+                        interactionSent = true;
                     }
 
-                    if (!EzThrottler.Throttle("ChestInteract", 500))
-                    {
-                        return false;
-                    }
-
-                    if (!GameObjectInteraction.TryInteract(entityId, DISTANCE_TO_NODE_TO_USE, position))
-                    {
-                        return false;
-                    }
-
-                    if (module.Tracker.RecordAcquired(entityId, treasureType))
-                    {
-                        SurfaceOpenedThisRun++;
-                    }
-
-                    MarkCompletedLocation(position);
-                    return true;
-                }, new TaskManagerConfiguration { TimeLimitMS = 10000, ShowError = false }));
+                    return false;
+                }, new TaskManagerConfiguration
+                {
+                    TimeLimitMS = 8000,
+                    ShowError = false,
+                    TimeoutSilently = true,
+                }));
         };
     }
 
@@ -271,8 +351,8 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     {
         if (ZoneData.IsInNorthHorn())
         {
-            return Treasure
-                .Where(item => !completedNodeIds.Contains(item.Id) && !unreachableNodeIds.Contains(item.Id))
+            return treasure
+                .Where(item => !IsExcludedOrCompleted(item.Id))
                 .Select(item => item.Id)
                 .ToList();
         }
@@ -283,7 +363,7 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override string GetRouteDescription()
     {
         return ZoneData.IsInNorthHorn()
-            ? "開始時にデミデジョンで拠点へ戻り、ナレッジクリスタル付近でたんきゅうしん、マギ・トレジャーサーチを実行します。毎回同じ固定順で地上の全座標へ接近し、宝箱が検出されなければ次の地点へ進みます。南西高台は乱気流で出入りし、地下空洞は対象外です。"
+            ? "開始時に一度だけデミデジョンで拠点へ戻り、ナレッジクリスタル付近でたんきゅうしんを使用後、エーテライト付近でマギ・トレジャーサーチを実行します。内部データの地上青銅・白銀座標を固定順で巡回し、開封後は帰還せず次へ進みます。地下空洞、マジックポット宝箱、設定上限を超える敵が付近にいる地点は対象外です。"
             : base.GetRouteDescription();
     }
 
@@ -293,31 +373,27 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
         Plugin.Chain.Submit(ChainHelper.TankyushinAtKnowledgeCrystalChain(
             alwaysUseDemiReturn: true,
             updateTreasureCount: true));
-        countRevisionAtRouteStart = module.Tracker.CountRevision;
-        awaitingRouteStartCount = true;
-        RouteStartRemainingChestCount = null;
-        RouteStartBronzeChestCount = null;
-        RouteStartSilverChestCount = null;
-        SurfaceOpenedThisRun = 0;
-        SurfaceCountValidationCompleted = false;
+
+        if (!isResuming && completedNodeIds.Count == 0)
+        {
+            openedNodeTypes.Clear();
+        }
     }
 
     protected override bool ShouldSkipStep(PathfinderStep step)
     {
         return ZoneData.IsInNorthHorn() &&
                step.Type == PathfinderStepType.WalkToNode &&
-               (completedNodeIds.Contains(step.NodeId) || unreachableNodeIds.Contains(step.NodeId));
+               IsExcludedOrCompleted(step.NodeId);
     }
 
     protected override void OnStepCompleted(PathfinderStep step)
     {
-        if (ZoneData.IsInNorthHorn() && step.Type == PathfinderStepType.WalkToNode)
+        if (ZoneData.IsInNorthHorn() &&
+            step.Type == PathfinderStepType.WalkToNode &&
+            !unreachableNodeIds.Contains(step.NodeId) &&
+            !unsafeNodeIds.Contains(step.NodeId))
         {
-            if (unreachableNodeIds.Contains(step.NodeId))
-            {
-                return;
-            }
-
             completedNodeIds.Add(step.NodeId);
         }
     }
@@ -325,7 +401,16 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override void OnStepUnreachable(PathfinderStep step)
     {
         var targetNodeId = GetRecoveryTargetNodeId(step);
-        if (ZoneData.IsInNorthHorn() && targetNodeId != 0)
+        if (!ZoneData.IsInNorthHorn() || targetNodeId == 0)
+        {
+            return;
+        }
+
+        if (CurrentStepFailureReason == StepFailureReason.UnsafeEnemy)
+        {
+            unsafeNodeIds.Add(targetNodeId);
+        }
+        else
         {
             unreachableNodeIds.Add(targetNodeId);
         }
@@ -343,20 +428,10 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     {
         completedNodeIds.Clear();
         unreachableNodeIds.Clear();
-        Treasure.Clear();
-        ExcludedUndergroundLocationCount = 0;
-        awaitingRouteStartCount = false;
-        RouteStartRemainingChestCount = null;
-        RouteStartBronzeChestCount = null;
-        RouteStartSilverChestCount = null;
-        SurfaceOpenedThisRun = 0;
-        SurfaceCountValidationCompleted = false;
-    }
-
-    protected override void Teardown()
-    {
-        SurfaceCountValidationCompleted = RouteStartRemainingChestCount.HasValue;
-        base.Teardown();
+        unsafeNodeIds.Clear();
+        openedNodeTypes.Clear();
+        treasure.Clear();
+        ResetInternalLayoutStatistics();
     }
 
     private IPathfinder CreateEmptyPathfinder()
@@ -366,26 +441,59 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     private static bool IsRandomCoffer(IGameObject obj)
     {
-        return Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>().TryGetRow(obj.BaseId, out var row)
-               && TreasureData.IsRandomCofferType(row.SGB.RowId);
+        if (TreasureData.IsMagicPotCofferBaseId(obj.BaseId))
+        {
+            return false;
+        }
+
+        return Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>().TryGetRow(obj.BaseId, out var row) &&
+               TreasureData.IsRandomCofferType(row.SGB.RowId);
     }
 
     private static bool IsCurrentCofferNear(ulong entityId, Vector3 expectedPosition)
     {
         var current = GameObjectInteraction.Resolve(entityId);
-        return current != null && IsRandomCoffer(current) && Vector3.Distance(current.Position, expectedPosition) <= 5f;
+        return current != null &&
+               IsRandomCoffer(current) &&
+               Vector3.Distance(current.Position, expectedPosition) <= 5f;
+    }
+
+    private void ConfirmOpenedCoffer(Vector3 position, TreasureType treasureType)
+    {
+        var nodeId = FindNearestNodeId(position);
+        if (nodeId == 0 || !openedNodeTypes.TryAdd(nodeId, treasureType))
+        {
+            return;
+        }
+
+        completedNodeIds.Add(nodeId);
+        Svc.Log.Info(
+            $"Confirmed normal coffer opened at route node {nodeId} ({treasureType}); continuing to the next coordinate.");
     }
 
     private void MarkCompletedLocation(Vector3 position)
     {
-        var nearest = Treasure
+        var nodeId = FindNearestNodeId(position);
+        if (nodeId != 0)
+        {
+            completedNodeIds.Add(nodeId);
+        }
+    }
+
+    private uint FindNearestNodeId(Vector3 position)
+    {
+        return treasure
             .Where(item => Vector3.Distance(item.Position, position) <= 5f)
             .OrderBy(item => Vector3.Distance(item.Position, position))
+            .Select(item => item.Id)
             .FirstOrDefault();
-        if (nearest.Id != 0)
-        {
-            completedNodeIds.Add(nearest.Id);
-        }
+    }
+
+    private bool IsExcludedOrCompleted(uint nodeId)
+    {
+        return completedNodeIds.Contains(nodeId) ||
+               unreachableNodeIds.Contains(nodeId) ||
+               unsafeNodeIds.Contains(nodeId);
     }
 
     private uint GetRecoveryTargetNodeId(PathfinderStep failedStep)
@@ -395,9 +503,9 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
             return failedStep.NodeId;
         }
 
-        // A failed aethernet or turbulence segment belongs to the next chest
-        // in the fixed route. Associate retries with that chest so the first
-        // failure rebuilds the path and only a repeated failure skips it.
+        // Travel steps belong to the next coffer in the fixed route. Binding
+        // recovery to that coffer prevents an aethernet/turbulence failure from
+        // rebuilding forever without identifying the affected destination.
         for (var index = stepIndex + 1; index < Steps.Count; index++)
         {
             if (Steps[index].Type == PathfinderStepType.WalkToNode)
@@ -407,6 +515,15 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
         }
 
         return 0;
+    }
+
+    private void ResetInternalLayoutStatistics()
+    {
+        InternalRandomCofferLocationCount = 0;
+        InternalBronzeLocationCount = 0;
+        InternalSilverLocationCount = 0;
+        ExcludedUndergroundLocationCount = 0;
+        ExcludedMagicPotLocationCount = 0;
     }
 
     private static uint CreateSyntheticNodeId(int index)

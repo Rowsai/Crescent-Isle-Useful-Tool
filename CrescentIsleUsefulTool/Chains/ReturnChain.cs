@@ -57,8 +57,6 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
             () => CreateDemiReturnChain(vnav)
         );
 
-        chain.Then(_ => CurrentStatus = "マギ・トレジャーサーチの更新を確認しています。");
-        chain.Then(ChainHelper.TreasureSightChain(config.UpdateTreasureCount));
         // Every successful Demi-Déjion performs the たんきゅうしん check.
         // ApplyBuffs remains useful for callers already at camp, but can no
         // longer suppress this post-return safety check.
@@ -84,6 +82,10 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
             chain.Then(_ => { VnavmeshIpc.TryStop(vnav); });
         }
 
+        // Treasuresight must be issued only after the return and the final
+        // approach to the base-camp aetheryte have both completed.
+        chain.Then(_ => CurrentStatus = "エーテライト付近でマギ・トレジャーサーチを実行しています。");
+        chain.Then(ChainHelper.TreasureSightChain(config.UpdateTreasureCount));
 
         return chain.Then(_ =>
         {

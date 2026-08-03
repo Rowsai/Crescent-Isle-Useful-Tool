@@ -53,7 +53,6 @@ public class TreasureModule(Plugin _plugin, Config config) : Module(_plugin, con
     {
         Tracker.Tick(Plugin);
         Hunter.Update();
-        Hunter.UpdateCountValidation();
     }
 
     public override void Render(RenderContext context)

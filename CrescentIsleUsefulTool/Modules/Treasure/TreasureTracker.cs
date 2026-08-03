@@ -21,13 +21,7 @@ public class TreasureTracker : IDisposable
 
     private const int MaximumSilverChests = 8;
 
-    private readonly HashSet<ulong> recordedOpenedTreasures = [];
-
     private string? countMessagePattern;
-
-    private int observedAcquiredBronzeChests;
-
-    private int observedAcquiredSilverChests;
 
     public List<Treasure> Treasures { get; private set; } = [];
 
@@ -39,19 +33,13 @@ public class TreasureTracker : IDisposable
 
     public int CountRevision { get; private set; }
 
+    public DateTime? LastMeasurementUtc { get; private set; }
+
     public int BronzeChests { get; private set; } = 0;
 
     public int SilverChests { get; private set; } = 0;
 
     public int RemainingChests => BronzeChests + SilverChests;
-
-    public int AcquiredBronzeChests => CountInitialised
-        ? Math.Max(observedAcquiredBronzeChests, MaximumBronzeChests - BronzeChests)
-        : observedAcquiredBronzeChests;
-
-    public int AcquiredSilverChests => CountInitialised
-        ? Math.Max(observedAcquiredSilverChests, MaximumSilverChests - SilverChests)
-        : observedAcquiredSilverChests;
 
     private readonly TimeSpan ParseWideTextCooldown = TimeSpan.FromSeconds(5);
 
@@ -70,6 +58,9 @@ public class TreasureTracker : IDisposable
             .Where(obj => obj is { ObjectKind: ObjectKind.Treasure, IsDead: false, IsTargetable: true })
             .Where(obj => obj.IsValid())
             .Select(obj => new Treasure(obj))
+            // Magic-pot coffers and unrelated treasure objects are managed by
+            // separate modules and must never enter the normal hunter list.
+            .Where(treasure => treasure.GetTreasureType() is TreasureType.Bronze or TreasureType.Silver)
             .OrderBy(treasure => Player.DistanceTo(treasure.Position))
             .ToList();
 
@@ -78,27 +69,6 @@ public class TreasureTracker : IDisposable
             CountMeasurementPending = false;
             CountMeasurementFailed = true;
         }
-    }
-
-    public bool RecordAcquired(ulong entityId, TreasureType treasureType)
-    {
-        if (!recordedOpenedTreasures.Add(entityId))
-        {
-            return false;
-        }
-
-        if (treasureType == TreasureType.Bronze)
-        {
-            observedAcquiredBronzeChests++;
-            BronzeChests = Math.Max(0, BronzeChests - 1);
-        }
-        else if (treasureType == TreasureType.Silver)
-        {
-            observedAcquiredSilverChests++;
-            SilverChests = Math.Max(0, SilverChests - 1);
-        }
-
-        return true;
     }
 
     public void BeginCountMeasurement()
@@ -123,15 +93,13 @@ public class TreasureTracker : IDisposable
     public void ResetSession()
     {
         Treasures.Clear();
-        recordedOpenedTreasures.Clear();
-        observedAcquiredBronzeChests = 0;
-        observedAcquiredSilverChests = 0;
         BronzeChests = 0;
         SilverChests = 0;
         CountInitialised = false;
         CountMeasurementPending = false;
         CountMeasurementFailed = false;
         CountRevision = 0;
+        LastMeasurementUtc = null;
         LastParseWideText = DateTime.MinValue;
         MeasurementRequestedAtUtc = DateTime.MinValue;
     }
@@ -231,6 +199,7 @@ public class TreasureTracker : IDisposable
         CountMeasurementPending = false;
         CountMeasurementFailed = false;
         CountRevision++;
+        LastMeasurementUtc = DateTime.UtcNow;
         LastParseWideText = DateTime.Now;
         return true;
     }

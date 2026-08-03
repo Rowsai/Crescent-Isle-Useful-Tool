@@ -59,11 +59,10 @@ public sealed class NorthHornPathfinder(
             .Where(requested.Contains)
             .ToList();
 
-        var steps = new List<PathfinderStep>
-        {
-            // Treasure hunting in North Horn always begins at the expedition base.
-            PathfinderStep.ReturnToBaseCamp(),
-        };
+        // The hunt-start chain performs the one mandatory Demi-Déjion and
+        // base-camp setup. Route recovery must continue from the current
+        // position, so a return step must never be embedded in this route.
+        var steps = new List<PathfinderStep>();
 
         var current = Aethernet.NorthBaseCamp.GetData().Position;
         foreach (var nextId in canonicalGroundOrder)

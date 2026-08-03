@@ -30,13 +30,6 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
     private static readonly TimeSpan CofferStationaryDelay = TimeSpan.FromMilliseconds(400);
     private static readonly TimeSpan CofferOpenTimeout = TimeSpan.FromSeconds(15);
 
-    private static readonly HashSet<uint> MagicPotCofferBaseIds =
-    [
-        2009530, // Gold
-        2009531, // Silver
-        2009532, // Bronze
-    ];
-
     private readonly List<HintSample> hints = [];
 
     private VNavmesh? vnav;
@@ -548,7 +541,7 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         return obj.IsValid()
                && obj.Address != nint.Zero
                && obj is { ObjectKind: ObjectKind.EventObj, IsDead: false, IsTargetable: true }
-               && MagicPotCofferBaseIds.Contains(obj.BaseId);
+               && TreasureData.IsMagicPotCofferBaseId(obj.BaseId);
     }
 
     private void ResetCofferInteraction()
