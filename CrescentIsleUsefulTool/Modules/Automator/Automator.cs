@@ -72,6 +72,8 @@ public class Automator
     {
         if (module.TryGetModule<MagicPotModule>(out var magicPot) && magicPot?.IsTreasureSearchActive == true)
         {
+            module.PauseAutomatedTreasureHunt(
+                "マジックポット宝箱探索を優先するため、通常宝箱巡回を一時停止しました。");
             SetRuntimeStatus("マジックポットの宝箱探索を優先しています。");
             return;
         }
@@ -106,6 +108,12 @@ public class Automator
 
         var states = module.GetModule<StateManagerModule>();
         var teleporter = module.GetModule<TeleporterModule>().teleporter;
+        if (Activity != null)
+        {
+            module.PauseAutomatedTreasureHunt(
+                "FATE・CEを優先するため、通常宝箱巡回を一時停止しました。");
+        }
+
         if (Activity != null && Activity.state == ActivityState.Done)
         {
             CompleteActivity(Activity, module, vnav);
@@ -143,6 +151,8 @@ public class Automator
         {
             if (!waitingForMagicPot)
             {
+                module.PauseAutomatedTreasureHunt(
+                    "マジックポットFATE待機を優先するため、通常宝箱巡回を一時停止しました。");
                 waitingForMagicPot = true;
                 Activity = null;
                 idleTime = 0;
@@ -191,6 +201,8 @@ public class Automator
                 var encounter = encounters[^1];
                 var data = EventData.GetCriticalEncounter(encounter.DynamicEventId);
                 Activity = new CriticalEncounter(data, lifestream, vnav, module, critical);
+                module.PauseAutomatedTreasureHunt(
+                    "参加中のCEを優先するため、通常宝箱巡回を一時停止しました。");
                 module.Debug($"Resuming running activity: {Activity.GetName()}");
                 return;
             }
@@ -200,6 +212,8 @@ public class Automator
                 Activity = FindFate(module, lifestream, vnav);
                 if (Activity != null)
                 {
+                    module.PauseAutomatedTreasureHunt(
+                        "参加中のFATEを優先するため、通常宝箱巡回を一時停止しました。");
                     module.Debug($"Resuming running activity: {Activity.GetName()}");
                 }
 
@@ -231,11 +245,19 @@ public class Automator
             if (Activity != null)
             {
                 idleTime = 0;
+                module.PauseAutomatedTreasureHunt(
+                    "FATE・CEを検知したため、通常宝箱巡回を一時停止しました。");
                 Plugin.Chain.Abort();
                 VnavmeshIpc.TryStop(vnav);
                 Svc.Log.Info($"Selected priority activity: {Activity.GetName()}");
                 SetRuntimeStatus($"{Activity.GetName()}を検知しました。移動を開始します。");
             }
+        }
+
+        if (Activity == null && module.TryRunAutomatedTreasureHunt())
+        {
+            SetRuntimeStatus("宝箱自動モード：地上の青銅・白銀座標を巡回しています。");
+            return;
         }
 
         if (IsChainActive)
@@ -769,6 +791,18 @@ public class Automator
                 _ =>
                 ["完了処理を開始", "デミデジョンを実行", "拠点へ帰還", "エーテライト付近へ移動", "監視を再開"],
             };
+        }
+
+        if (module.IsAutomatedTreasureHuntRunning())
+        {
+            return
+            [
+                "内部データの次の通常宝箱座標を確認",
+                "最大エリアレベルと到達可能経路を検証",
+                "宝箱のオブジェクト検出範囲まで移動",
+                "宝箱を開封し、消失を確認",
+                "デミデジョンせず次の未確認座標へ移動",
+            ];
         }
 
         var order = string.Join(" → ", module.Config.GetPriorityOrder().Select(priority => priority.ToJapaneseLabel()));

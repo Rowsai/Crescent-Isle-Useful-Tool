@@ -109,6 +109,11 @@ public class Panel
             return "マジックポット宝箱探索";
         }
 
+        if (module.IsAutomatedTreasureHuntRunning())
+        {
+            return "通常宝箱の自動巡回";
+        }
+
         var activity = module.automator.Activity;
         if (activity == null)
         {

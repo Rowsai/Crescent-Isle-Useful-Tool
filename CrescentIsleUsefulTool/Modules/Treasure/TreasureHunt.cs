@@ -76,6 +76,9 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     protected override bool RebuildRouteAfterUnreachable => ZoneData.IsInNorthHorn();
 
+    protected override bool CanStartHunt =>
+        !ZoneData.IsInNorthHorn() || treasure.Count == 0 || RemainingLocationCount > 0;
+
     protected override float GetInactiveNodeConfirmationRange()
     {
         // An absent/already-opened placement is accepted only after entering

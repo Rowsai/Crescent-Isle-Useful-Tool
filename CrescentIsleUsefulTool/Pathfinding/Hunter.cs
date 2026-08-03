@@ -171,6 +171,8 @@ public abstract class Hunter
         return true;
     }
 
+    protected virtual bool CanStartHunt => true;
+
     /// <summary>
     /// Rebuild the remaining route when a paused hunt is started again.
     /// The treasure hunter uses this to return to camp first while retaining
@@ -391,53 +393,7 @@ public abstract class Hunter
                 }
                 else
                 {
-                    if (ownerModule.TryGetModule<TeleporterModule>(out var teleporter) &&
-                        teleporter?.teleporter.IsCompletionReturnPending == true)
-                    {
-                        runtimeStatus = "FATE・CE完了後の拠点帰還が完了してから開始できます。";
-                        return;
-                    }
-
-                    if (ownerModule.TryGetModule<MagicPotModule>(out var magicPot) &&
-                        magicPot?.IsTreasureSearchActive == true)
-                    {
-                        runtimeStatus = "マジックポットの宝箱探索が完了してから開始できます。";
-                        return;
-                    }
-
-                    if (ownerModule.TryGetModule<AutomatorModule>(out var automator) && automator?.Config.Enabled == true)
-                    {
-                        automator.DisableAutomationMode();
-                    }
-
-                    var isResuming = HasPausedProgress;
-                    var rebuildFromRouteStart = isResuming && RebuildRouteOnResume;
-                    if (rebuildFromRouteStart)
-                    {
-                        stepIndex = 0;
-                        Steps.Clear();
-                        pathfinder = null;
-                    }
-
-                    ResetMovementValidation();
-                    StepProcessor.Abort();
-                    running = true;
-                    OnHuntStarted(isResuming);
-                    if (isResuming)
-                    {
-                        stopwatch.Start();
-                        runtimeStatus = rebuildFromRouteStart
-                            ? "完了済み座標を除外し、ベースキャンプから経路を再構築します。"
-                            : $"中断地点から再開します（{stepIndex}/{Steps.Count}）。";
-                    }
-                    else
-                    {
-                        stepIndex = 0;
-                        Steps.Clear();
-                        pathfinder = null;
-                        stopwatch.Restart();
-                        runtimeStatus = "開始準備中です。";
-                    }
+                    TryStartHunt(disableAutomationMode: true, runStartupPreparation: true);
                 }
             }
 
@@ -496,6 +452,81 @@ public abstract class Hunter
                 }
             }
         }, GetRouteDescription());
+    }
+
+    public bool StartForAutomation(bool runStartupPreparation)
+    {
+        return TryStartHunt(disableAutomationMode: false, runStartupPreparation);
+    }
+
+    private bool TryStartHunt(bool disableAutomationMode, bool runStartupPreparation)
+    {
+        if (running)
+        {
+            return true;
+        }
+
+        if (!CanStartHunt)
+        {
+            runtimeStatus = "巡回対象の宝箱座標はすべて確認済みです。";
+            return false;
+        }
+
+        if (ownerModule.TryGetModule<TeleporterModule>(out var teleporter) &&
+            teleporter?.teleporter.IsCompletionReturnPending == true)
+        {
+            runtimeStatus = "FATE・CE完了後の拠点帰還が完了してから開始できます。";
+            return false;
+        }
+
+        if (ownerModule.TryGetModule<MagicPotModule>(out var magicPot) &&
+            magicPot?.IsTreasureSearchActive == true)
+        {
+            runtimeStatus = "マジックポットの宝箱探索が完了してから開始できます。";
+            return false;
+        }
+
+        if (disableAutomationMode &&
+            ownerModule.TryGetModule<AutomatorModule>(out var automator) &&
+            automator?.Config.Enabled == true)
+        {
+            automator.DisableAutomationMode();
+        }
+
+        var isResuming = HasPausedProgress;
+        var rebuildRemainingRoute = isResuming && RebuildRouteOnResume;
+        if (rebuildRemainingRoute)
+        {
+            stepIndex = 0;
+            Steps.Clear();
+            pathfinder = null;
+        }
+
+        ResetMovementValidation();
+        StepProcessor.Abort();
+        running = true;
+        if (runStartupPreparation)
+        {
+            OnHuntStarted(isResuming);
+        }
+
+        if (isResuming)
+        {
+            stopwatch.Start();
+            runtimeStatus = rebuildRemainingRoute
+                ? "完了済み座標を除外し、残りの固定経路を再構築します。"
+                : $"中断地点から再開します（{stepIndex}/{Steps.Count}）。";
+        }
+        else
+        {
+            stepIndex = 0;
+            Steps.Clear();
+            pathfinder = null;
+            stopwatch.Restart();
+            runtimeStatus = runStartupPreparation ? "開始準備中です。" : "巡回経路を作成しています。";
+        }
+
+        return true;
     }
 
     protected virtual string GetRouteDescription()
