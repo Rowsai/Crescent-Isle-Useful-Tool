@@ -1,4 +1,3 @@
-using CrescentIsleUsefulTool.ActionHelpers;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules.CriticalEncounters;
@@ -35,6 +34,11 @@ public class CriticalEncounter : Activity
     {
         return new TaskManagerTask(() =>
         {
+            if (Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat])
+            {
+                return false;
+            }
+
             if (!IsValid())
             {
                 throw new Exception("Activity is no longer valid.");
@@ -113,6 +117,11 @@ public class CriticalEncounter : Activity
             return Chain.Create("Automation:WaitingToStartCriticalEncounter")
                 .Then(new TaskManagerTask(() =>
                     {
+                        if (Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat])
+                        {
+                            return false;
+                        }
+
                         if (!IsValid())
                         {
                             throw new Exception("The critical encounter appears to have started without you.");
@@ -127,17 +136,6 @@ public class CriticalEncounter : Activity
                             states.GetState() != State.InCriticalEncounter)
                         {
                             throw new Exception("The critical encounter appears to have started without you.");
-                        }
-
-                        VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
-                        if (!isRunning && states.GetState() == State.InCombat)
-                        {
-                            Actions.TryUnmount();
-
-                            if (module.Config.ShouldToggleAiProvider)
-                            {
-                                module.Config.AiProvider.On();
-                            }
                         }
 
                         return states.GetState() == State.InCriticalEncounter;

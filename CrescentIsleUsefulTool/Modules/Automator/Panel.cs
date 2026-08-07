@@ -23,7 +23,11 @@ public class Panel
                 if (ImGui.BeginTable("##AutomationSummary", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchSame))
                 {
                     ImGui.TableNextColumn();
-                    CrescentTheme.Status("ステータス", module.IsEnabled ? "有効" : "無効", module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted);
+                    var status = module.IsSuspendedForCombat ? "戦闘中一時停止" : module.IsEnabled ? "有効" : "無効";
+                    var statusColor = module.IsSuspendedForCombat
+                        ? CrescentTheme.Warning
+                        : module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted;
+                    CrescentTheme.Status("ステータス", status, statusColor);
                     ImGui.TableNextColumn();
                     ImGui.TextDisabled("操作モード");
                     ImGui.TextColored(module.IsEnabled ? CrescentTheme.AccentSoft : CrescentTheme.Muted, GetActiveMode(module));
@@ -66,6 +70,8 @@ public class Panel
         }
 
         ImGui.TableNextColumn();
+        var activityControlsEnabled = module.IsAutomationActive;
+        ImGui.BeginDisabled(!activityControlsEnabled);
         var ceEnabled = module.Config.DoCriticalEncounters;
         if (ImGui.Button(
                 ceEnabled ? "CE移動を停止##MainCeToggle" : "CE移動を開始##MainCeToggle",
@@ -84,8 +90,16 @@ public class Panel
             module.SetFateTravelEnabled(!fateEnabled);
             fateEnabled = !fateEnabled;
         }
+        ImGui.EndDisabled();
 
         ImGui.EndTable();
+
+        if (!activityControlsEnabled)
+        {
+            ImGui.TextDisabled(module.IsSuspendedForCombat
+                ? "戦闘中はCE・FATE移動を変更できません。戦闘終了後に自動操作が再開します。"
+                : "CE・FATE移動は、自動操作を開始すると選択できます。");
+        }
 
         ImGui.TextColored(
             !ceEnabled && !fateEnabled ? CrescentTheme.Warning : CrescentTheme.Muted,
@@ -99,6 +113,11 @@ public class Panel
 
     private static string GetActiveMode(AutomatorModule module)
     {
+        if (module.IsSuspendedForCombat)
+        {
+            return "戦闘中一時停止";
+        }
+
         if (!module.IsEnabled)
         {
             return "停止中";

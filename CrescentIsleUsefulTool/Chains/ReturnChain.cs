@@ -99,7 +99,6 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
         var returnRequestedAtUtc = DateTime.MinValue;
         var lastActionRequestUtc = DateTime.MinValue;
         var castFinishedAtUtc = DateTime.MinValue;
-        var nextCombatMoveRetryUtc = DateTime.MinValue;
         var castStarted = false;
         var sawBetweenAreas = false;
 
@@ -125,6 +124,18 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                 // Demi-Déjion cannot be cast while mounted, in combat, moving,
                 // or while another action is being cast. Resolve those states
                 // here and keep retrying instead of timing out after one cast.
+                if (Svc.Condition[ConditionFlag.InCombat])
+                {
+                    CurrentStatus = "戦闘中のためデミデジョン帰還を一時停止しています。";
+                    if (VnavmeshIpc.IsMovementActive(vnav))
+                    {
+                        VnavmeshIpc.TryCancelAllPathfinds(vnav);
+                        VnavmeshIpc.TryStop(vnav);
+                    }
+
+                    return false;
+                }
+
                 if (Svc.Condition[ConditionFlag.Mounted])
                 {
                     CurrentStatus = "デミデジョン実行のためマウントを降りています。";
@@ -132,25 +143,6 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                     {
                         Actions.TryUnmount();
                         lastActionRequestUtc = DateTime.UtcNow;
-                    }
-
-                    return false;
-                }
-
-                if (Svc.Condition[ConditionFlag.InCombat])
-                {
-                    CurrentStatus = "戦闘解除のため最寄りの魔導通路方向へ退避しています。";
-                    if (DateTime.UtcNow >= nextCombatMoveRetryUtc &&
-                        !VnavmeshIpc.IsMovementActive(vnav))
-                    {
-                        var escape = AethernetData.AllByDistance().FirstOrDefault()?.Position ?? GetAetherytePosition();
-                        if (Player.DistanceTo(escape) <= 8f)
-                        {
-                            escape = GetAetherytePosition();
-                        }
-
-                        VnavmeshIpc.TryPathfindAndMoveTo(vnav, escape, false);
-                        nextCombatMoveRetryUtc = DateTime.UtcNow.AddSeconds(2);
                     }
 
                     return false;

@@ -15,6 +15,7 @@ using CrescentIsleUsefulTool.Modules.Pathfinder;
 using CrescentIsleUsefulTool.Modules.StateManager;
 using CrescentIsleUsefulTool.Modules.Teleporter;
 using CrescentIsleUsefulTool.Ui;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
@@ -47,6 +48,8 @@ public abstract class Hunter
     protected PathfinderConfig config;
 
     protected bool running;
+
+    private bool suspendedForCombat;
 
     protected IPathfinder? pathfinder;
 
@@ -232,6 +235,29 @@ public abstract class Hunter
         if (!running)
         {
             return;
+        }
+
+        if (Svc.Condition[ConditionFlag.InCombat])
+        {
+            if (!suspendedForCombat)
+            {
+                suspendedForCombat = true;
+                VnavmeshIpc.TryCancelAllPathfinds(vnav);
+                VnavmeshIpc.TryStop(vnav);
+                Plugin.Chain.Abort();
+                StepProcessor.Abort();
+                ResetMovementValidation();
+            }
+
+            runtimeStatus = "戦闘中のため宝箱巡回を一時停止しています。";
+            return;
+        }
+
+        if (suspendedForCombat)
+        {
+            suspendedForCombat = false;
+            ResetMovementValidation();
+            runtimeStatus = "戦闘終了を確認しました。宝箱巡回を再開します。";
         }
 
         if (!VnavmeshIpc.IsOperational(vnav, out var navigationWaitingReason))
@@ -645,37 +671,22 @@ public abstract class Hunter
 
     private bool ReturnToBaseCampHandler()
     {
-        var inCombat = states.GetState() == State.InCombat;
+        var inCombat = Svc.Condition[ConditionFlag.InCombat];
         var baseCamp = ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp;
         distance = Player.DistanceTo(baseCamp.GetData().Position);
 
-        // If we are in combat, start running back to the base camp so we can escape combat
         VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
-        if (inCombat && !isRunning)
-        {
-            VnavmeshIpc.TryPathfindAndMoveTo(vnav, baseCamp.GetData().Position, false);
-            ResetMovementProgress(distance);
-            return false;
-        }
-
-        if (inCombat && HasMovementStalled(distance))
+        if (inCombat)
         {
             VnavmeshIpc.TryCancelAllPathfinds(vnav);
             VnavmeshIpc.TryStop(vnav);
-            ResetMovementProgress(distance);
-            runtimeStatus = "戦闘解除中の移動停止を検知したため、ベースキャンプへの経路を再作成します。";
-            Svc.Log.Warning(runtimeStatus);
+            runtimeStatus = "戦闘中のためベースキャンプ帰還を一時停止しています。";
             return false;
         }
 
         if (!inCombat && isRunning)
         {
             VnavmeshIpc.TryStop(vnav);
-        }
-
-        if (inCombat)
-        {
-            return false;
         }
 
         StepProcessor.SubmitFront(ChainHelper.ReturnChain(new ReturnChainConfig

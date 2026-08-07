@@ -53,12 +53,6 @@ public class Automator
 
     private readonly Dictionary<string, DateTime> activityCooldowns = [];
 
-    private DateTime idleCombatLastProgressUtc = DateTime.MinValue;
-
-    private DateTime nextIdleCombatRepathUtc = DateTime.MinValue;
-
-    private Vector3 idleCombatLastPosition;
-
     public bool IsWaitingForMagicPot => waitingForMagicPot;
 
     public string RuntimeStatus { get; private set; } = "停止中";
@@ -178,14 +172,6 @@ public class Automator
 
         if (Activity == null)
         {
-            if (states.GetState() == State.InCombat)
-            {
-                RecoverFromIdleCombat(vnav);
-                return;
-            }
-
-            ResetIdleCombatRecovery();
-
             if (states.GetState() == State.InCriticalEncounter)
             {
                 var critical = module.GetModule<CriticalEncountersModule>();
@@ -563,56 +549,6 @@ public class Automator
         return true;
     }
 
-    private void RecoverFromIdleCombat(VNavmesh vnav)
-    {
-        var now = DateTime.UtcNow;
-        var position = Player.Position;
-        if (idleCombatLastProgressUtc == DateTime.MinValue)
-        {
-            idleCombatLastProgressUtc = now;
-            idleCombatLastPosition = position;
-            nextIdleCombatRepathUtc = DateTime.MinValue;
-        }
-
-        if (Vector3.Distance(position, idleCombatLastPosition) >= 1.5f)
-        {
-            idleCombatLastPosition = position;
-            idleCombatLastProgressUtc = now;
-        }
-
-        var movementStalled = now - idleCombatLastProgressUtc >= TimeSpan.FromSeconds(8);
-        if (now >= nextIdleCombatRepathUtc &&
-            (!VnavmeshIpc.IsMovementActive(vnav) || movementStalled))
-        {
-            if (movementStalled)
-            {
-                VnavmeshIpc.TryCancelAllPathfinds(vnav);
-                VnavmeshIpc.TryStop(vnav);
-            }
-
-            var destination = AethernetData.AllByDistance().FirstOrDefault()?.Position;
-            var baseCamp = (ZoneData.IsInNorthHorn() ? Aethernet.NorthBaseCamp : Aethernet.BaseCamp).GetData();
-            if (destination == null || Vector3.Distance(position, destination.Value) <= 8f)
-            {
-                destination = baseCamp.Position;
-            }
-
-            VnavmeshIpc.TryPathfindAndMoveTo(vnav, destination.Value, false);
-            idleCombatLastPosition = position;
-            idleCombatLastProgressUtc = now;
-            nextIdleCombatRepathUtc = now.AddSeconds(2);
-        }
-
-        SetRuntimeStatus("戦闘解除のため最寄りの魔導通路方向へ退避しています。");
-    }
-
-    private void ResetIdleCombatRecovery()
-    {
-        idleCombatLastProgressUtc = DateTime.MinValue;
-        nextIdleCombatRepathUtc = DateTime.MinValue;
-        idleCombatLastPosition = Vector3.Zero;
-    }
-
     private bool IsActivityCoolingDown(EventType type, uint id)
     {
         var key = GetActivityKey(type, id);
@@ -828,6 +764,12 @@ public class Automator
         Activity = null;
         idleTime = 0;
         waitingForMagicPot = false;
+        ResetActivityWatchdog();
+    }
+
+    public void ResumeAfterCombatSuspension()
+    {
+        idleTime = 0;
         ResetActivityWatchdog();
     }
 }

@@ -7,6 +7,7 @@ using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules.Automator;
 using CrescentIsleUsefulTool.Modules.Treasure;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Text;
@@ -46,6 +47,12 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
     private ulong openingCofferEntityId;
     private DateTime openingStartedUtc = DateTime.MinValue;
     private bool openingCastObserved;
+    private bool cofferDiscoveryPending;
+    private bool suspendedForCombat;
+    private DateTime openingObjectMissingSinceUtc = DateTime.MinValue;
+    private ulong discoveredCofferEntityId;
+    private DateTime cofferDiscoveryStartedUtc = DateTime.MinValue;
+    private DateTime cofferLastSeenUtc = DateTime.MinValue;
 
     private Vector3 watchedMovementDestination;
 
@@ -61,7 +68,9 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
 
     internal bool HasGuidanceBuff => Svc.Objects.LocalPlayer?.StatusList.Any(status => status.StatusId == GuidanceStatusId) == true;
 
-    internal bool IsActive => module.Config.ShouldEnableTreasureSearchMode && ZoneData.IsInNorthHorn() && HasGuidanceBuff;
+    internal bool IsActive => module.Config.ShouldEnableTreasureSearchMode &&
+                              ZoneData.IsInNorthHorn() &&
+                              (HasGuidanceBuff || cofferDiscoveryPending || openingCofferEntityId != 0);
 
     internal string RuntimeStatus { get; private set; } = "財宝誘導バフを待っています。";
 
@@ -82,7 +91,7 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
             return;
         }
 
-        if (!hasGuidance)
+        if (!hasGuidance && !cofferDiscoveryPending && openingCofferEntityId == 0)
         {
             if (hadGuidance)
             {
@@ -113,6 +122,28 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
             return;
         }
 
+        if (Svc.Condition[ConditionFlag.InCombat])
+        {
+            if (!suspendedForCombat)
+            {
+                suspendedForCombat = true;
+                VnavmeshIpc.TryCancelAllPathfinds(vnav);
+                VnavmeshIpc.TryStop(vnav);
+                ResetMovementWatchdog();
+            }
+
+            RuntimeStatus = "戦闘中のためマジックポット宝箱探索を一時停止しています。";
+            return;
+        }
+
+        if (suspendedForCombat)
+        {
+            suspendedForCombat = false;
+            nextMovementRetryUtc = DateTime.MinValue;
+            ResetMovementWatchdog();
+            RuntimeStatus = "戦闘終了を確認しました。マジックポット宝箱探索を再開します。";
+        }
+
         if (awaitingHint && DateTime.UtcNow >= hintDeadlineUtc)
         {
             // Chat delivery can be missed while loading or changing UI state.
@@ -126,10 +157,40 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
             return;
         }
 
-        var coffer = FindRevealedCoffer();
+        var coffer = FindRevealedCoffer(
+            ignoreTarget: cofferDiscoveryPending,
+            maximumDistance: cofferDiscoveryPending ? 100f : 30f);
         if (coffer != null)
         {
             MoveToAndOpen(coffer);
+            return;
+        }
+
+        if (cofferDiscoveryPending)
+        {
+            VnavmeshIpc.TryStop(vnav);
+            if (discoveredCofferEntityId != 0 &&
+                cofferLastSeenUtc != DateTime.MinValue &&
+                DateTime.UtcNow - cofferLastSeenUtc >= TimeSpan.FromSeconds(2))
+            {
+                CompleteCofferOpening();
+                return;
+            }
+
+            if (discoveredCofferEntityId == 0 &&
+                cofferDiscoveryStartedUtc != DateTime.MinValue &&
+                DateTime.UtcNow - cofferDiscoveryStartedUtc >= TimeSpan.FromSeconds(10))
+            {
+                // A localized discovery message can arrive before the object
+                // table is populated. If it still cannot be resolved, return
+                // to elixir/hint acquisition instead of waiting forever.
+                ResetCofferDiscovery();
+                nextElixirUseUtc = DateTime.UtcNow;
+                RuntimeStatus = "発見した宝箱を検出できないため、マジカルエリクサーで再確認します。";
+                return;
+            }
+
+            RuntimeStatus = "発見した宝箱を検出しています。開封を確認するまで探索を継続します。";
             return;
         }
 
@@ -193,6 +254,7 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         if (IsSecondChanceMessage(text))
         {
             secondChance = true;
+            ResetCofferDiscovery();
             hints.Clear();
             target = null;
             awaitingHint = false;
@@ -205,7 +267,13 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         if (IsCofferDiscoveredMessage(text))
         {
             awaitingHint = false;
-            RuntimeStatus = "宝箱を発見しました。開封します。";
+            hintDeadlineUtc = DateTime.MinValue;
+            cofferDiscoveryPending = true;
+            discoveredCofferEntityId = 0;
+            cofferDiscoveryStartedUtc = DateTime.UtcNow;
+            cofferLastSeenUtc = DateTime.MinValue;
+            nextMovementRetryUtc = DateTime.MinValue;
+            RuntimeStatus = "宝箱を発見しました。開封を確認するまで操作を継続します。";
             return;
         }
 
@@ -243,6 +311,7 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         awaitingHint = false;
         hintDeadlineUtc = DateTime.MinValue;
         secondChance = false;
+        ResetCofferDiscovery();
         hints.Clear();
         target = null;
         sourcePotFateId = module.MostRecentPotFateId ?? InferSourcePotFromPosition();
@@ -284,6 +353,8 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         awaitingHint = false;
         hintDeadlineUtc = DateTime.MinValue;
         secondChance = false;
+        ResetCofferDiscovery();
+        suspendedForCombat = false;
         hints.Clear();
         target = null;
         sourcePotFateId = null;
@@ -322,19 +393,33 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         }
     }
 
-    private IGameObject? FindRevealedCoffer(uint? entityId = null)
+    private IGameObject? FindRevealedCoffer(
+        uint? entityId = null,
+        bool ignoreTarget = false,
+        float maximumDistance = 30f)
     {
         return Svc.Objects
             .Where(IsValidCoffer)
             .Where(obj => entityId == null || obj.EntityId == entityId.Value)
-            .Where(obj => target == null || HorizontalDistance(obj.Position, target.Value) <= CofferDetectionDistance)
+            .Where(obj => ignoreTarget || target == null || HorizontalDistance(obj.Position, target.Value) <= CofferDetectionDistance)
             .OrderBy(obj => HorizontalDistance(Player.Position, obj.Position))
-            .FirstOrDefault(obj => HorizontalDistance(Player.Position, obj.Position) <= 30f);
+            .FirstOrDefault(obj => HorizontalDistance(Player.Position, obj.Position) <= maximumDistance);
     }
 
     private void MoveToAndOpen(IGameObject coffer)
     {
+        // Once a real coffer object has been seen, never return to hint/elixir
+        // processing until that same coffer has disappeared after an opening
+        // attempt. This also covers localized discovery messages being missed.
+        cofferDiscoveryPending = true;
         var entityId = coffer.EntityId;
+        discoveredCofferEntityId = entityId;
+        if (cofferDiscoveryStartedUtc == DateTime.MinValue)
+        {
+            cofferDiscoveryStartedUtc = DateTime.UtcNow;
+        }
+
+        cofferLastSeenUtc = DateTime.UtcNow;
         var cofferPosition = coffer.Position;
         var distance = Player.DistanceTo(coffer);
         if (distance > CofferInteractionDistance)
@@ -429,24 +514,58 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
             return;
         }
 
-        var current = GameObjectInteraction.Resolve(openingCofferEntityId);
-        if (current == null || !IsValidCoffer(current))
-        {
-            CompleteCofferOpening();
-            return;
-        }
-
         if (Svc.Objects.LocalPlayer?.IsCasting == true)
         {
             openingCastObserved = true;
+            openingObjectMissingSinceUtc = DateTime.MinValue;
             RuntimeStatus = "マジックポットの宝箱を開封中です。移動せず詠唱完了を待っています。";
             return;
         }
 
         var elapsed = DateTime.UtcNow - openingStartedUtc;
+        var current = GameObjectInteraction.Resolve(openingCofferEntityId);
+        var cofferStillPresent = current != null &&
+                                 current.Address != nint.Zero &&
+                                 TreasureData.IsMagicPotCofferBaseId(current.BaseId);
+        if (!cofferStillPresent)
+        {
+            if (openingCastObserved)
+            {
+                CompleteCofferOpening();
+                return;
+            }
+
+            if (openingObjectMissingSinceUtc == DateTime.MinValue)
+            {
+                openingObjectMissingSinceUtc = DateTime.UtcNow;
+            }
+
+            if (DateTime.UtcNow - openingObjectMissingSinceUtc >= TimeSpan.FromSeconds(1))
+            {
+                CompleteCofferOpening();
+                return;
+            }
+
+            RuntimeStatus = "宝箱の開封結果を確認しています。";
+            return;
+        }
+
+        openingObjectMissingSinceUtc = DateTime.MinValue;
         if (openingCastObserved && elapsed < TimeSpan.FromSeconds(8))
         {
             RuntimeStatus = "開封結果を確認しています。";
+            return;
+        }
+
+        if (openingCastObserved)
+        {
+            openingCofferEntityId = 0;
+            openingStartedUtc = DateTime.MinValue;
+            openingCastObserved = false;
+            openingObjectMissingSinceUtc = DateTime.MinValue;
+            pendingCofferEntityId = 0;
+            cofferStationarySinceUtc = DateTime.MinValue;
+            RuntimeStatus = "宝箱が残っているため、開封操作を再試行します。";
             return;
         }
 
@@ -460,6 +579,7 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         openingCofferEntityId = 0;
         openingStartedUtc = DateTime.MinValue;
         openingCastObserved = false;
+        openingObjectMissingSinceUtc = DateTime.MinValue;
         ResetCofferInteraction();
         RuntimeStatus = "宝箱の開封を確認できなかったため、安全に再試行します。";
     }
@@ -469,6 +589,7 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         openingCofferEntityId = 0;
         openingStartedUtc = DateTime.MinValue;
         openingCastObserved = false;
+        openingObjectMissingSinceUtc = DateTime.MinValue;
         pendingCofferEntityId = 0;
         cofferStationarySinceUtc = DateTime.MinValue;
         hints.Clear();
@@ -476,6 +597,7 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         awaitingHint = false;
         hintDeadlineUtc = DateTime.MinValue;
         nextElixirUseUtc = DateTime.UtcNow.AddSeconds(3);
+        ResetCofferDiscovery();
         RuntimeStatus = "マジックポットの宝箱を開封しました。";
         ResetMovementWatchdog();
     }
@@ -551,6 +673,15 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         openingCofferEntityId = 0;
         openingStartedUtc = DateTime.MinValue;
         openingCastObserved = false;
+        openingObjectMissingSinceUtc = DateTime.MinValue;
+    }
+
+    private void ResetCofferDiscovery()
+    {
+        cofferDiscoveryPending = false;
+        discoveredCofferEntityId = 0;
+        cofferDiscoveryStartedUtc = DateTime.MinValue;
+        cofferLastSeenUtc = DateTime.MinValue;
     }
 
     private Vector3? InferTarget()

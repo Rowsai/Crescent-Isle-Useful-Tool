@@ -24,6 +24,11 @@ public class FateActivity(EventData data, Lifestream lifestream, VNavmesh vnav, 
 
         return new TaskManagerTask(() =>
         {
+            if (Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat])
+            {
+                return false;
+            }
+
             if (EzThrottler.Throttle("FatePathfindingWatcher.EnemyScan", 100))
             {
                 if (Svc.Targets.Target == null)

@@ -122,10 +122,17 @@ public abstract class Activity
         return () =>
         {
             return Chain.Create("Automation:Participating")
-                .ConditionalThen(_ => module.Config.ShouldToggleAiProvider, _ => module.Config.AiProvider.On())
+                .ConditionalThen(
+                    _ => module.Config.ShouldToggleAiProvider && !Svc.Condition[ConditionFlag.InCombat],
+                    _ => module.Config.AiProvider.On())
                 .Then(_ => { VnavmeshIpc.TryStop(vnav); })
                 .Then(new TaskManagerTask(() =>
                 {
+                    if (Svc.Condition[ConditionFlag.InCombat])
+                    {
+                        return false;
+                    }
+
                     if (!module.Config.ShouldForceTarget || !EzThrottler.Throttle("Participating.ForceTarget", 500))
                     {
                         return states.GetState() == State.Idle;
