@@ -72,6 +72,8 @@ public abstract class Hunter
 
     private DateTime reachablePathRequestedAtUtc = DateTime.MinValue;
 
+    private DateTime nextReachablePathAttemptUtc = DateTime.MinValue;
+
     private int reachablePathFollowFailures;
 
     private List<Vector3> activeMovementPath = [];
@@ -713,6 +715,41 @@ public abstract class Hunter
 
         distance = Player.DistanceTo(movementDestination);
 
+        // Resolve arrival before asking vnavmesh for another path. The old
+        // order generated a new sub-metre path every frame even though the
+        // player was already close enough to interact or confirm an empty
+        // placement.
+        if (obj != null && distance <= DISTANCE_TO_NODE_TO_USE)
+        {
+            VnavmeshIpc.TryStop(vnav);
+            StepProcessor.SubmitFront(GetInteractionChain(obj));
+            // Keep the route step active until the interaction chain has
+            // confirmed that the object disappeared. Advancing here would
+            // mark an unopened coffer as completed.
+            return false;
+        }
+
+        if (obj == null && layoutDistance <= GetInactiveNodeConfirmationRange())
+        {
+            VnavmeshIpc.TryStop(vnav);
+            if (inactiveNodeConfirmationStartedUtc == DateTime.MinValue)
+            {
+                inactiveNodeConfirmationStartedUtc = DateTime.UtcNow;
+                return false;
+            }
+
+            if (DateTime.UtcNow - inactiveNodeConfirmationStartedUtc < GetInactiveNodeConfirmationDelay())
+            {
+                return false;
+            }
+
+            // This placement is not active for the current player, or it has
+            // already been opened. Continue to the next internal coordinate.
+            return true;
+        }
+
+        inactiveNodeConfirmationStartedUtc = DateTime.MinValue;
+
         VnavmeshIpc.TryIsRunning(vnav, out var isRunning);
         if (!isRunning)
         {
@@ -740,42 +777,7 @@ public abstract class Hunter
             StepProcessor.SubmitFront(ChainHelper.MountChain());
         }
 
-        if (obj != null)
-        {
-            if (distance <= DISTANCE_TO_NODE_TO_USE)
-            {
-                VnavmeshIpc.TryStop(vnav);
-                StepProcessor.SubmitFront(GetInteractionChain(obj));
-                // Keep the route step active until the interaction chain has
-                // confirmed that the object disappeared. Advancing here used
-                // to mark unopened coffers as completed.
-                return false;
-            }
-
-            return false;
-        }
-
-        if (layoutDistance <= GetInactiveNodeConfirmationRange())
-        {
-            if (inactiveNodeConfirmationStartedUtc == DateTime.MinValue)
-            {
-                inactiveNodeConfirmationStartedUtc = DateTime.UtcNow;
-                return false;
-            }
-
-            if (DateTime.UtcNow - inactiveNodeConfirmationStartedUtc < GetInactiveNodeConfirmationDelay())
-            {
-                return false;
-            }
-
-            // This placement is not active for the current player, or it has
-            // already been opened. Continue to the next internal coordinate.
-            VnavmeshIpc.TryStop(vnav);
-            return true;
-        }
-
-        inactiveNodeConfirmationStartedUtc = DateTime.MinValue;
-        return distance <= DISTANCE_TO_NODE_TO_USE;
+        return false;
     }
 
     private bool ReturnToBaseCampHandler()
@@ -810,7 +812,15 @@ public abstract class Hunter
 
     private bool WalkToAethernetHandler()
     {
-        var destination = CurrentStep.Aethernet.GetData().Position;
+        var aethernet = CurrentStep.Aethernet.GetData();
+        var crystalPosition = aethernet.Position;
+        // The crystal centre is inside its collision body. Destination is the
+        // authored, navigable landing pad and remains inside Lifestream's
+        // interaction radius, so approach that point instead of repeatedly
+        // asking vnavmesh to stand in the centre of the object.
+        var destination = aethernet.Destination == Vector3.Zero
+            ? crystalPosition
+            : aethernet.Destination;
 
         if (TryGetUnsafeEnemyOnCurrentRoute(destination, out var unsafeEnemy))
         {
@@ -818,8 +828,9 @@ public abstract class Hunter
             return true;
         }
 
-        distance = Player.DistanceTo(destination);
-        if (distance <= 4f)
+        distance = Player.DistanceTo(crystalPosition);
+        if (distance <= AethernetData.DISTANCE &&
+            ZoneData.IsNearAethernetShard(CurrentStep.Aethernet, AethernetData.DISTANCE))
         {
             skipNextAethernetTeleport = false;
             VnavmeshIpc.TryStop(vnav);
@@ -842,7 +853,7 @@ public abstract class Hunter
             }
         }
 
-        if (HasMovementStalled(distance))
+        if (HasMovementStalled(Player.DistanceTo(destination)))
         {
             MarkCurrentStepUnreachable("魔導通路への移動が停止したため、この移動区間を中止しました。", StepFailureReason.Stalled);
             return true;
@@ -935,6 +946,7 @@ public abstract class Hunter
             reachablePathDestination = destination;
             reachablePathEndpoint = destination;
             reachablePathFollowFailures = 0;
+            nextReachablePathAttemptUtc = DateTime.MinValue;
             if (VnavmeshIpc.TryFindPointOnFloor(vnav, destination, false, 4f, out var floorPoint) && floorPoint.HasValue)
             {
                 reachablePathEndpoint = floorPoint.Value;
@@ -944,6 +956,11 @@ public abstract class Hunter
 
         if (reachablePathTask == null)
         {
+            if (DateTime.UtcNow < nextReachablePathAttemptUtc)
+            {
+                return ReachableMovementState.Pending;
+            }
+
             if (!VnavmeshIpc.TryPathfind(vnav, Player.Position, reachablePathEndpoint, false, out reachablePathTask) || reachablePathTask == null)
             {
                 return DateTime.UtcNow - reachablePathRequestedAtUtc > PathRequestTimeout
@@ -980,6 +997,13 @@ public abstract class Hunter
         reachablePathTask = null;
         if (path.Count == 0)
         {
+            if (Vector3.Distance(Player.Position, reachablePathEndpoint) <= 1.25f)
+            {
+                movementPathStarted = true;
+                nextReachablePathAttemptUtc = DateTime.UtcNow.AddMilliseconds(750);
+                return ReachableMovementState.Started;
+            }
+
             return ReachableMovementState.Unreachable;
         }
 
@@ -993,12 +1017,14 @@ public abstract class Hunter
         if (!VnavmeshIpc.TryFollowPath(vnav, path, false))
         {
             reachablePathFollowFailures++;
+            nextReachablePathAttemptUtc = DateTime.UtcNow.AddMilliseconds(500);
             return reachablePathFollowFailures >= 3
                 ? ReachableMovementState.Unreachable
                 : ReachableMovementState.Pending;
         }
 
         reachablePathFollowFailures = 0;
+        nextReachablePathAttemptUtc = DateTime.UtcNow.AddMilliseconds(750);
         movementPathStarted = true;
         if (movementProgressStepIndex != stepIndex)
         {
@@ -1185,6 +1211,7 @@ public abstract class Hunter
         reachablePathDestination = default;
         reachablePathEndpoint = default;
         reachablePathRequestedAtUtc = DateTime.MinValue;
+        nextReachablePathAttemptUtc = DateTime.MinValue;
         reachablePathFollowFailures = 0;
         activeMovementPath.Clear();
         activeMovementPathStepIndex = -1;

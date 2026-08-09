@@ -39,7 +39,7 @@ public sealed class NorthHornPathfinder(
 
     public PathfinderState State { get; private set; } = PathfinderState.FileLoaded;
 
-    public Task<List<PathfinderStep>> FindPath(Vector3 _, List<uint> nodes)
+    public Task<List<PathfinderStep>> FindPath(Vector3 start, List<uint> nodes)
     {
         if (State != PathfinderState.FileLoaded)
         {
@@ -64,7 +64,11 @@ public sealed class NorthHornPathfinder(
         // position, so a return step must never be embedded in this route.
         var steps = new List<PathfinderStep>();
 
-        var current = Aethernet.NorthBaseCamp.GetData().Position;
+        // The first build starts beside the base camp, but recovery builds are
+        // requested from the player's live position. Using the base camp here
+        // unconditionally made a recovery at Karnak walk across the whole map
+        // toward North Base Camp before it could teleport.
+        var current = start;
         foreach (var nextId in canonicalGroundOrder)
         {
             var plan = BuildTravelPlan(current, treasureById[nextId]);
@@ -84,8 +88,36 @@ public sealed class NorthHornPathfinder(
         State = PathfinderState.PathfindingDone;
         Svc.Log.Info(
             $"North Horn treasure route built from internal layout data: {treasureById.Count} locations, " +
-            $"{plateauNodes.Count} turbulence-plateau locations, {steps.Count} steps.");
+            $"{plateauNodes.Count} turbulence-plateau locations, {steps.Count} steps, start {start}.");
+        LogRoute(steps);
         return Task.FromResult(steps);
+    }
+
+    private static void LogRoute(IReadOnlyList<PathfinderStep> steps)
+    {
+        Svc.Log.Info("== North Horn Treasure Route ==");
+        var cofferCount = 0;
+        for (var index = 0; index < steps.Count; index++)
+        {
+            var step = steps[index];
+            var description = step.Type switch
+            {
+                PathfinderStepType.WalkToNode => $"宝箱座標へ移動: {step.NodeId}",
+                PathfinderStepType.WalkToAethernet => $"魔導通路へ移動: {step.Aethernet}",
+                PathfinderStepType.TeleportToAethernet => $"魔導通路で転送: {step.Aethernet}",
+                PathfinderStepType.RideTurbulence => $"乱気流で移動: {step.Position} -> {step.ArrivalPosition}",
+                PathfinderStepType.ReturnToBaseCamp => "ベースキャンプへ帰還",
+                _ => "不明な経路ステップ",
+            };
+            if (step.Type == PathfinderStepType.WalkToNode)
+            {
+                cofferCount++;
+            }
+
+            Svc.Log.Info($"[{index + 1}] {description}");
+        }
+
+        Svc.Log.Info($"== 巡回対象の宝箱座標: {cofferCount} ==");
     }
 
     private TravelPlan BuildPlateauPlan(
@@ -156,23 +188,88 @@ public sealed class NorthHornPathfinder(
 
     private List<uint> BuildCanonicalGroundOrder()
     {
-        var remaining = treasureById.Keys
+        var nodes = treasureById.Keys
             .Where(id => !IsSouthwestTurbulencePlateau(treasureById[id].Position))
-            .ToHashSet();
-        var order = new List<uint>(remaining.Count);
-        var current = Aethernet.NorthBaseCamp.GetData().Position;
-        while (remaining.Count > 0)
+            .OrderBy(id => id)
+            .ToList();
+        if (nodes.Count <= 1)
         {
-            var next = remaining
-                .OrderBy(id => BuildTravelPlan(current, treasureById[id]).Cost)
-                .ThenBy(id => id)
-                .First();
-            order.Add(next);
-            current = treasureById[next].Position;
-            remaining.Remove(next);
+            return nodes;
         }
 
-        return order;
+        // Build one deterministic, base-camp-seeded route for the complete
+        // surface layout. Filtering completed/unsafe nodes happens only after
+        // this order has been fixed, so a recovery never reshuffles all later
+        // coffers. Nearest insertion is the same route shape used by the
+        // reference implementation: it compares both direct walks and
+        // aethernet hops instead of merely picking the next Euclidean point.
+        var graph = new Dictionary<uint, Dictionary<uint, float>>(nodes.Count);
+        foreach (var fromId in nodes)
+        {
+            var from = treasureById[fromId].Position;
+            var costs = new Dictionary<uint, float>(nodes.Count - 1);
+            foreach (var toId in nodes)
+            {
+                if (fromId != toId)
+                {
+                    costs[toId] = BuildTravelPlan(from, treasureById[toId]).Cost;
+                }
+            }
+
+            graph[fromId] = costs;
+        }
+
+        var seed = Aethernet.NorthBaseCamp.GetData().Position;
+        var startNode = nodes
+            .OrderBy(id => Vector3.DistanceSquared(seed, treasureById[id].Position))
+            .ThenBy(id => id)
+            .First();
+        var route = new List<uint> { startNode };
+        var unvisited = nodes.Where(id => id != startNode).ToHashSet();
+
+        while (unvisited.Count > 0)
+        {
+            var bestCost = float.MaxValue;
+            var bestIndex = -1;
+            uint bestNode = 0;
+
+            // Explicit ordering also makes equal-cost insertions stable across
+            // runtimes and guarantees the same route on every invocation.
+            foreach (var nodeToInsert in unvisited.OrderBy(id => id))
+            {
+                for (var index = 0; index < route.Count; index++)
+                {
+                    var fromId = route[index];
+                    var insertionCost = index == route.Count - 1
+                        ? graph[fromId][nodeToInsert]
+                        : graph[fromId][nodeToInsert]
+                          + graph[nodeToInsert][route[index + 1]]
+                          - graph[fromId][route[index + 1]];
+
+                    if (insertionCost < bestCost - 0.001f ||
+                        MathF.Abs(insertionCost - bestCost) <= 0.001f &&
+                        (bestIndex < 0 || nodeToInsert < bestNode))
+                    {
+                        bestCost = insertionCost;
+                        bestIndex = index + 1;
+                        bestNode = nodeToInsert;
+                    }
+                }
+            }
+
+            if (bestIndex < 0)
+            {
+                // Defensive fallback: preserve every coordinate even if a
+                // malformed cost graph somehow reaches this branch.
+                route.AddRange(unvisited.OrderBy(id => id));
+                break;
+            }
+
+            route.Insert(bestIndex, bestNode);
+            unvisited.Remove(bestNode);
+        }
+
+        return route;
     }
 
     private float GetOrderedCost(Vector3 start, Vector3 exit, IReadOnlyCollection<uint> nodes)
