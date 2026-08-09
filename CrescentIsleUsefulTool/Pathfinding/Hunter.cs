@@ -1032,9 +1032,14 @@ public abstract class Hunter
         foreach (var enemy in TargetHelper.Enemies.Where(enemy =>
                      enemy.IsValid() &&
                      enemy.IsTargetable &&
-                     !enemy.IsDead &&
-                     enemy.Level > config.MaxLevel))
+                     !enemy.IsDead))
         {
+            var knowledgeLevel = KnowledgeLevel.TryGet(enemy);
+            if (knowledgeLevel is null || knowledgeLevel.Value <= config.MaxLevel)
+            {
+                continue;
+            }
+
             var currentDistance = Vector3.Distance(position, enemy.Position);
             var futureDistance = futurePath.Min(point => Vector3.Distance(point, enemy.Position));
             const float avoidanceRadius = 25f;
@@ -1049,7 +1054,7 @@ public abstract class Hunter
                 enemyName = "敵";
             }
 
-            unsafeEnemyDescription = $"Lv.{enemy.Level} {enemyName}";
+            unsafeEnemyDescription = $"ナレッジLv.{knowledgeLevel.Value} {enemyName}";
             message = $"{unsafeEnemyDescription}を経路上に検知しました。最大エリアレベル Lv.{config.MaxLevel} を超えるため近づきません。";
             return true;
         }
@@ -1062,24 +1067,26 @@ public abstract class Hunter
         const float avoidanceRadius = 25f;
         var enemy = TargetHelper.Enemies
             .Where(candidate => candidate.IsValid() && candidate.IsTargetable && !candidate.IsDead)
-            .Where(candidate => candidate.Level > config.MaxLevel)
-            .Where(candidate => Vector3.Distance(candidate.Position, destination) < avoidanceRadius)
-            .OrderBy(candidate => Vector3.Distance(candidate.Position, destination))
+            .Select(candidate => (Enemy: candidate, KnowledgeLevel: KnowledgeLevel.TryGet(candidate)))
+            .Where(candidate => candidate.KnowledgeLevel is not null &&
+                                candidate.KnowledgeLevel.Value > config.MaxLevel)
+            .Where(candidate => Vector3.Distance(candidate.Enemy.Position, destination) < avoidanceRadius)
+            .OrderBy(candidate => Vector3.Distance(candidate.Enemy.Position, destination))
             .FirstOrDefault();
-        if (enemy == null)
+        if (enemy.Enemy == null || enemy.KnowledgeLevel is null)
         {
             description = "";
             return false;
         }
 
-        var name = enemy.Name.TextValue;
+        var name = enemy.Enemy.Name.TextValue;
         if (string.IsNullOrWhiteSpace(name))
         {
             name = "敵";
         }
 
-        description = $"Lv.{enemy.Level} {name}（設定上限 Lv.{config.MaxLevel}）";
-        unsafeEnemyDescription = $"Lv.{enemy.Level} {name}";
+        description = $"ナレッジLv.{enemy.KnowledgeLevel.Value} {name}（設定上限 Lv.{config.MaxLevel}）";
+        unsafeEnemyDescription = $"ナレッジLv.{enemy.KnowledgeLevel.Value} {name}";
         return true;
     }
 

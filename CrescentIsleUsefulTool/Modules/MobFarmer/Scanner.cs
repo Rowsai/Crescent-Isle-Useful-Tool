@@ -29,14 +29,15 @@ public class Scanner(MobFarmerModule module)
         Mobs = TargetHelper.Enemies
             .Where(obj => obj.IsValid() && Player.DistanceTo(obj) <= module.Config.MaxEuclideanDistance)
             .Where(IsSelectedMob)
-            .Where(obj => obj.Level <= module.Config.MaxMobLevel)
+            .Select(obj => (Enemy: obj, KnowledgeLevel: KnowledgeLevel.TryGet(obj)))
+            .Where(obj => obj.KnowledgeLevel is null || obj.KnowledgeLevel.Value <= module.Config.MaxMobLevel)
             .Select(obj => new MobSnapshot(
-                obj.EntityId,
-                obj.NameId,
-                obj.Position,
-                obj.IsTargetingPlayer(),
-                obj.HasTarget(),
-                obj.Level))
+                obj.Enemy.EntityId,
+                obj.Enemy.NameId,
+                obj.Enemy.Position,
+                obj.Enemy.IsTargetingPlayer(),
+                obj.Enemy.HasTarget(),
+                obj.KnowledgeLevel ?? 0))
             .ToList();
     }
 
