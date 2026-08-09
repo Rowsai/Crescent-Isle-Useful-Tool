@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules.Treasure;
@@ -38,6 +37,10 @@ public class AutomatorModule : Module
                                         (suspendedForCombat || Svc.Condition[ConditionFlag.InCombat]);
 
     public bool IsAutomationActive => Config.Enabled && !IsSuspendedForCombat;
+
+    public bool HasSelectedOperation => Config.ShouldDoCriticalEncounters ||
+                                        Config.ShouldDoFates ||
+                                        IsTreasureHuntSelected();
 
     private readonly List<uint> occultCrescentTerritoryIds = [ZoneData.SOUTHHORN, ZoneData.NORTHHORN];
 
@@ -96,15 +99,22 @@ public class AutomatorModule : Module
     {
         var wasDisabled = !Config.Enabled;
         Config.Enabled = true;
-        if (TryGetModule<TreasureModule>(out var treasure) && treasure?.Config.Enabled == true)
+
+        if (wasDisabled)
         {
-            // The treasure automation switch follows the main automation
-            // switch. Users can stop both from the single main-window button.
-            treasure.Config.EnableTreasureHunt = true;
+            // The main switch is only a prerequisite. Every subordinate mode
+            // must be selected explicitly from its own main-window button.
+            Config.DoCriticalEncounters = false;
+            Config.DoFates = false;
+            if (TryGetModule<TreasureModule>(out var treasure) && treasure != null)
+            {
+                treasure.Config.EnableTreasureHunt = false;
+                treasure.Hunter.PauseFromMainWindow();
+            }
         }
 
         automator.Refresh();
-        automator.SetRuntimeStatus("FATE／CEと移動プラグインの状態を確認しています。");
+        automator.SetRuntimeStatus("自動操作を開始しました。実行する機能を選択してください。");
         PluginConfig.Save();
 
         if (wasDisabled)
@@ -112,16 +122,6 @@ public class AutomatorModule : Module
             if (Svc.Condition[ConditionFlag.InCombat])
             {
                 HandleCombatSuspension();
-            }
-            else if (TryRunAutomatedTreasureHunt(runStartupPreparation: true))
-            {
-                automator.SetRuntimeStatus("宝箱自動モードを開始し、拠点で準備しています。");
-            }
-            else
-            {
-                Plugin.Chain.Abort();
-                Plugin.Chain.Submit(ChainHelper.TankyushinAtKnowledgeCrystalChain());
-                automator.SetRuntimeStatus("ナレッジクリスタルへ移動し、たんきゅうしんを使用します。");
             }
 
             Svc.Chat.Print(T("messages.on"));
@@ -137,8 +137,11 @@ public class AutomatorModule : Module
         suspendedForCombat = false;
         automator.Refresh();
         automator.SetRuntimeStatus("停止中");
-        TryGetIPCSubscriber<VNavmesh>(out var vnav);
-        VnavmeshIpc.TryStop(vnav);
+        if (!Svc.Condition[ConditionFlag.InCombat])
+        {
+            TryGetIPCSubscriber<VNavmesh>(out var vnav);
+            VnavmeshIpc.TryStop(vnav);
+        }
         Plugin.Chain.Abort();
         PauseAutomatedTreasureHunt("自動操作モードを停止したため、宝箱巡回を一時停止しました。");
         if (shouldTurnOffAiProvider)
@@ -179,6 +182,12 @@ public class AutomatorModule : Module
     internal bool IsAutomatedTreasureHuntRunning()
     {
         return TryGetModule<TreasureModule>(out var treasure) && treasure?.Hunter.IsRunning == true;
+    }
+
+    private bool IsTreasureHuntSelected()
+    {
+        return TryGetModule<TreasureModule>(out var treasure) &&
+               treasure?.Config.ShouldEnableTreasureHunt == true;
     }
 
     public void SetCriticalEncounterTravelEnabled(bool enabled)

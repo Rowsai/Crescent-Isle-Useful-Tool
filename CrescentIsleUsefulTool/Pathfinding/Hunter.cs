@@ -9,7 +9,6 @@ using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
 using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules;
-using CrescentIsleUsefulTool.Modules.Automator;
 using CrescentIsleUsefulTool.Modules.MagicPot;
 using CrescentIsleUsefulTool.Modules.Pathfinder;
 using CrescentIsleUsefulTool.Modules.StateManager;
@@ -91,6 +90,8 @@ public abstract class Hunter
 
     private DateTime lastDestinationProgressAtUtc = DateTime.MinValue;
 
+    private DateTime inactiveNodeConfirmationStartedUtc = DateTime.MinValue;
+
     private bool currentStepUnreachable;
 
     private StepFailureReason currentStepFailureReason;
@@ -98,8 +99,6 @@ public abstract class Hunter
     private bool movementPathStarted;
 
     private bool skipNextAethernetTeleport;
-
-    private bool rebuildingAfterUnreachableRoute;
 
     private readonly Dictionary<string, int> routeRecoveryAttempts = [];
 
@@ -154,6 +153,11 @@ public abstract class Hunter
         return GetDetectionRange();
     }
 
+    protected virtual TimeSpan GetInactiveNodeConfirmationDelay()
+    {
+        return TimeSpan.Zero;
+    }
+
     protected abstract IPathfinder CreatePathfinder();
 
     protected abstract Func<Chain> GetInteractionChain(IGameObject obj);
@@ -178,17 +182,6 @@ public abstract class Hunter
     /// the coordinates that were already completed.
     /// </summary>
     protected virtual bool RebuildRouteOnResume => false;
-
-    /// <summary>
-    /// Allows an explicit route-start reset to use Demi-Déjion even inside
-    /// the base-camp safety radius. This remains disabled for ordinary hunts.
-    /// </summary>
-    protected virtual bool AlwaysUseDemiReturnAtRouteStart => false;
-
-    /// <summary>
-    /// Forces Magi Treasuresight during the route-start return sequence.
-    /// </summary>
-    protected virtual bool UpdateTreasureCountAtRouteStart => false;
 
     protected virtual void OnHuntStarted(bool isResuming)
     {
@@ -380,10 +373,6 @@ public abstract class Hunter
 
                         ResetMovementValidation();
                         stepIndex++;
-                        if (step.Type == PathfinderStepType.ReturnToBaseCamp)
-                        {
-                            rebuildingAfterUnreachableRoute = false;
-                        }
                     }
                 })
                 .Wait(1000 / 60)
@@ -426,11 +415,6 @@ public abstract class Hunter
 
     public bool HasPausedRoute => HasPausedProgress;
 
-    public bool StartManually()
-    {
-        return TryStartHunt(disableAutomationMode: true, runStartupPreparation: true);
-    }
-
     public void PauseFromMainWindow()
     {
         if (running)
@@ -441,10 +425,10 @@ public abstract class Hunter
 
     public bool StartForAutomation(bool runStartupPreparation)
     {
-        return TryStartHunt(disableAutomationMode: false, runStartupPreparation);
+        return TryStartHunt(runStartupPreparation);
     }
 
-    private bool TryStartHunt(bool disableAutomationMode, bool runStartupPreparation)
+    private bool TryStartHunt(bool runStartupPreparation)
     {
         if (running)
         {
@@ -469,13 +453,6 @@ public abstract class Hunter
         {
             runtimeStatus = "マジックポットの宝箱探索が完了してから開始できます。";
             return false;
-        }
-
-        if (disableAutomationMode &&
-            ownerModule.TryGetModule<AutomatorModule>(out var automator) &&
-            automator?.Config.Enabled == true)
-        {
-            automator.DisableAutomationMode();
         }
 
         var isResuming = HasPausedProgress;
@@ -532,7 +509,6 @@ public abstract class Hunter
         pathfinder = null;
         ResetMovementValidation();
         skipNextAethernetTeleport = false;
-        rebuildingAfterUnreachableRoute = false;
         routeRecoveryAttempts.Clear();
     }
 
@@ -588,7 +564,6 @@ public abstract class Hunter
         runtimeStatus = "停止中";
         ResetMovementValidation();
         skipNextAethernetTeleport = false;
-        rebuildingAfterUnreachableRoute = false;
         routeRecoveryAttempts.Clear();
         OnProgressReset();
     }
@@ -652,7 +627,10 @@ public abstract class Hunter
             {
                 VnavmeshIpc.TryStop(vnav);
                 StepProcessor.SubmitFront(GetInteractionChain(obj));
-                return true;
+                // Keep the route step active until the interaction chain has
+                // confirmed that the object disappeared. Advancing here used
+                // to mark unopened coffers as completed.
+                return false;
             }
 
             return false;
@@ -660,12 +638,24 @@ public abstract class Hunter
 
         if (layoutDistance <= GetInactiveNodeConfirmationRange())
         {
+            if (inactiveNodeConfirmationStartedUtc == DateTime.MinValue)
+            {
+                inactiveNodeConfirmationStartedUtc = DateTime.UtcNow;
+                return false;
+            }
+
+            if (DateTime.UtcNow - inactiveNodeConfirmationStartedUtc < GetInactiveNodeConfirmationDelay())
+            {
+                return false;
+            }
+
             // This placement is not active for the current player, or it has
             // already been opened. Continue to the next internal coordinate.
             VnavmeshIpc.TryStop(vnav);
             return true;
         }
 
+        inactiveNodeConfirmationStartedUtc = DateTime.MinValue;
         return distance <= DISTANCE_TO_NODE_TO_USE;
     }
 
@@ -693,10 +683,7 @@ public abstract class Hunter
         {
             ApproachAetheryte = true,
             ForceReturn = ZoneData.IsInNorthHorn(),
-            AlwaysUseDemiReturn = AlwaysUseDemiReturnAtRouteStart && !rebuildingAfterUnreachableRoute,
-            WaitForStationaryDemiReturn = AlwaysUseDemiReturnAtRouteStart,
             ApplyBuffs = true,
-            UpdateTreasureCount = UpdateTreasureCountAtRouteStart,
         }));
 
         return true;
@@ -1058,7 +1045,6 @@ public abstract class Hunter
         stepIndex = 0;
         pathfinder = null;
         skipNextAethernetTeleport = false;
-        rebuildingAfterUnreachableRoute = true;
         runtimeStatus = attempt == 1
             ? "進行不能を検知したため、残り座標の経路を再作成しています。"
             : "同じ区間が再び進行不能になったため、対象を除外して経路を再作成しています。";
@@ -1082,6 +1068,7 @@ public abstract class Hunter
         lastMovementDistance = float.MaxValue;
         lastMovementProgressAtUtc = DateTime.MinValue;
         lastDestinationProgressAtUtc = DateTime.MinValue;
+        inactiveNodeConfirmationStartedUtc = DateTime.MinValue;
         currentStepUnreachable = false;
         currentStepFailureReason = StepFailureReason.None;
         movementPathStarted = false;

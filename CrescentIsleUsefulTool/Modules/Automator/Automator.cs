@@ -135,6 +135,15 @@ public class Automator
             return;
         }
 
+        // The master switch grants permission only. Until the user selects CE,
+        // FATE or treasure hunting, CIUT must not move, buff or return by itself.
+        if (Activity == null && !module.HasSelectedOperation)
+        {
+            idleTime = 0;
+            SetRuntimeStatus("実行機能が未選択です。CE移動、FATE移動、トレジャーハントから選択してください。");
+            return;
+        }
+
         if (Activity != null && UpdateActivityProgressWatchdog(module, lifestream, vnav, teleporter))
         {
             return;
@@ -582,21 +591,44 @@ public class Automator
 
     private void CompleteActivity(Activity completedActivity, AutomatorModule module, VNavmesh vnav)
     {
-        Plugin.Chain.Abort();
-        VnavmeshIpc.TryStop(vnav);
-        if (module.Config.ShouldToggleAiProvider)
+        EndTrackedActivity(module, vnav);
+
+        var name = string.IsNullOrWhiteSpace(completedActivity.data.InternalName)
+            ? "アクティビティ"
+            : completedActivity.data.InternalName;
+        module.GetModule<TeleporterModule>().teleporter.RequestMandatoryCompletionReturn($"{name}完了");
+        SetRuntimeStatus($"{name}の完了・消失を確認しました。必須帰還へ移行します。");
+    }
+
+    internal bool CompleteTrackedActivityFromExternal(AutomatorModule module, string reason)
+    {
+        if (Activity == null)
         {
-            module.Config.AiProvider.Off();
+            return false;
+        }
+
+        module.TryGetIPCSubscriber<VNavmesh>(out var vnav);
+        EndTrackedActivity(module, vnav);
+        module.GetModule<TeleporterModule>().teleporter.RequestMandatoryCompletionReturn(reason);
+        SetRuntimeStatus($"{reason}を確認しました。宝箱探索後に必須帰還を実行します。");
+        return true;
+    }
+
+    private void EndTrackedActivity(AutomatorModule module, VNavmesh? vnav)
+    {
+        Plugin.Chain.Abort();
+        if (!Svc.Condition[ConditionFlag.InCombat])
+        {
+            VnavmeshIpc.TryStop(vnav);
+            if (module.Config.ShouldToggleAiProvider)
+            {
+                module.Config.AiProvider.Off();
+            }
         }
 
         Activity = null;
         idleTime = 0;
         ResetActivityWatchdog();
-
-        var name = string.IsNullOrWhiteSpace(completedActivity.data.InternalName)
-            ? "Activity"
-            : completedActivity.data.InternalName;
-        module.GetModule<TeleporterModule>().teleporter.RequestMandatoryCompletionReturn($"{name}完了");
     }
 
     private static bool IsProtectedBuffSequenceActive()
@@ -670,10 +702,35 @@ public class Automator
             return
             [
                 "自動操作モードは停止中です",
-                "開始時にナレッジクリスタル付近へ移動",
-                "たんきゅうしん実行後に元のサポートジョブへ復帰",
-                "設定した優先順位でFATE・CEを監視",
-                "対象へ移動し、完了後はデミデジョンで帰還",
+                "自動操作を開始して実行許可を与える",
+                "CE移動・FATE移動・トレジャーハントを個別に選択",
+                "選択した機能だけを監視・実行",
+                "戦闘中はCIUTを停止して戦闘AIへ操作を委譲",
+                "選択されるまでCIUTは移動・帰還を行いません",
+            ];
+        }
+
+        if (module.IsSuspendedForCombat)
+        {
+            return
+            [
+                "戦闘を検知：CIUTの自動操作を停止",
+                "vnavmesh・対象選択・帰還操作を戦闘AIへ委譲",
+                "現在のFATE・CE・宝箱進行を保持",
+                "戦闘終了を待機",
+                "戦闘終了後に保持した処理を再開",
+            ];
+        }
+
+        if (!module.HasSelectedOperation)
+        {
+            return
+            [
+                "自動操作の実行許可は有効です",
+                "CE移動を開始するか選択",
+                "FATE移動を開始するか選択",
+                "トレジャーハントを実施するか選択",
+                "選択されるまで移動・帰還・バフ操作を行いません",
             ];
         }
 
@@ -681,7 +738,7 @@ public class Automator
         {
             return
             [
-                "デミデジョンで拠点へ帰還",
+                "デミデジョンを使わず拠点へ移動",
                 "ナレッジクリスタル付近へ移動",
                 "移動停止とマウント解除を確認",
                 "すっぴんへ変更してたんきゅうしんを実行",

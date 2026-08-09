@@ -110,6 +110,10 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                                    Svc.Condition[ConditionFlag.BetweenAreas51];
                 if (betweenAreas)
                 {
+                    // The return is committed as soon as the area transition is
+                    // observed. If the outer chain is suspended afterwards, a
+                    // retry must not cast Demi-Déjion a second time at camp.
+                    performedDemiReturn = true;
                     CurrentStatus = "デミデジョンによるエリア移動を確認しています。";
                     sawBetweenAreas = true;
                     return false;
@@ -127,12 +131,8 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                 if (Svc.Condition[ConditionFlag.InCombat])
                 {
                     CurrentStatus = "戦闘中のためデミデジョン帰還を一時停止しています。";
-                    if (VnavmeshIpc.IsMovementActive(vnav))
-                    {
-                        VnavmeshIpc.TryCancelAllPathfinds(vnav);
-                        VnavmeshIpc.TryStop(vnav);
-                    }
-
+                    // Never touch the shared vnavmesh path during combat. The
+                    // configured AI provider owns movement until combat ends.
                     return false;
                 }
 
@@ -213,7 +213,8 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
     private bool ShouldUseDemiReturn()
     {
-        return !performedDemiReturn &&
+        return config.AllowDemiReturn &&
+               !performedDemiReturn &&
                (config.AlwaysUseDemiReturn ||
                !ZoneData.IsNearBaseCamp() &&
                (config.ForceReturn || GetCostToReturn() < GetCostToWalk()));

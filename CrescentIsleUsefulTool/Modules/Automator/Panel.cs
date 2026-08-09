@@ -4,6 +4,7 @@ using System.Linq;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
 using CrescentIsleUsefulTool.Modules.MagicPot;
+using CrescentIsleUsefulTool.Modules.Teleporter;
 using CrescentIsleUsefulTool.Ui;
 using Dalamud.Bindings.ImGui;
 
@@ -121,6 +122,17 @@ public class Panel
         if (!module.IsEnabled)
         {
             return "停止中";
+        }
+
+        var teleporter = module.GetModule<TeleporterModule>().teleporter;
+        if (teleporter.IsCompletionReturnPending)
+        {
+            return "FATE・CE完了後の必須帰還";
+        }
+
+        if (!module.HasSelectedOperation)
+        {
+            return "実行機能未選択";
         }
 
         if (module.TryGetModule<MagicPotModule>(out var magicPot) && magicPot?.IsTreasureSearchActive == true)

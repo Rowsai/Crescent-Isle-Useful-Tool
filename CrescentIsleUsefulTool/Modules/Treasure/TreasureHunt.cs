@@ -81,9 +81,15 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     protected override float GetInactiveNodeConfirmationRange()
     {
-        // An absent/already-opened placement is accepted only after entering
-        // the user-configured object-detection range.
-        return ZoneData.IsInNorthHorn() ? GetDetectionRange() : base.GetInactiveNodeConfirmationRange();
+        // Every North Horn placement must be visited at interaction distance.
+        // The configurable radar range is intentionally not sufficient to
+        // declare an inactive/already-opened coordinate checked.
+        return ZoneData.IsInNorthHorn() ? DISTANCE_TO_NODE_TO_USE + 1f : base.GetInactiveNodeConfirmationRange();
+    }
+
+    protected override TimeSpan GetInactiveNodeConfirmationDelay()
+    {
+        return ZoneData.IsInNorthHorn() ? TimeSpan.FromMilliseconds(750) : TimeSpan.Zero;
     }
 
     protected override IEnumerable<IGameObject> GetValidObjects()
@@ -321,8 +327,8 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
                     if (DateTime.UtcNow - interactionStartedAtUtc > TimeSpan.FromSeconds(7))
                     {
                         Svc.Log.Warning(
-                            $"Coffer interaction was not confirmed after {interactionAttempts} attempts; continuing safely.");
-                        MarkCompletedLocation(position);
+                            $"Coffer interaction was not confirmed after {interactionAttempts} attempts; retrying the same coffer.");
+                        runtimeStatus = "宝箱の開封を確認できなかったため、同じ宝箱を再試行します。";
                         return true;
                     }
 
@@ -366,16 +372,14 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override string GetRouteDescription()
     {
         return ZoneData.IsInNorthHorn()
-            ? "開始時に一度だけデミデジョンで拠点へ戻り、ナレッジクリスタル付近でたんきゅうしんを使用後、エーテライト付近でマギ・トレジャーサーチを実行します。内部データの地上青銅・白銀座標を固定順で巡回し、開封後は帰還せず次へ進みます。地下空洞、マジックポット宝箱、設定上限を超える敵が付近にいる地点は対象外です。"
+            ? "開始時に拠点へ移動し、ナレッジクリスタル付近でたんきゅうしんを使用後、エーテライト付近でマギ・トレジャーサーチを実行します。内部データの地上青銅・白銀座標を固定順で検知距離まで巡回し、開封後は帰還せず次へ進みます。地下空洞、マジックポット宝箱、設定上限を超える敵が付近にいる地点は対象外です。"
             : base.GetRouteDescription();
     }
 
     protected override void OnHuntStarted(bool isResuming)
     {
         Plugin.Chain.Abort();
-        Plugin.Chain.Submit(ChainHelper.TankyushinAtKnowledgeCrystalChain(
-            alwaysUseDemiReturn: true,
-            updateTreasureCount: true));
+        Plugin.Chain.Submit(ChainHelper.TankyushinAtKnowledgeCrystalChain(updateTreasureCount: true));
 
         if (!isResuming && completedNodeIds.Count == 0)
         {

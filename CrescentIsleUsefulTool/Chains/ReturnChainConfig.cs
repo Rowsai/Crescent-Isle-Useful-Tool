@@ -7,9 +7,15 @@ public struct ReturnChainConfig()
     public bool ForceReturn { get; init; } = false;
 
     /// <summary>
+    /// Allows this chain to cast Demi-Déjion. This is disabled by default so
+    /// only the centralized activity-completion return can issue the action.
+    /// </summary>
+    public bool AllowDemiReturn { get; init; } = false;
+
+    /// <summary>
     /// Cast Demi-Déjion even when the player is already inside the normal
-    /// base-camp no-return radius. Treasure hunting uses this only for its
-    /// explicit route-start reset; activity automation keeps the safety radius.
+    /// base-camp no-return radius. Used only by the mandatory activity-
+    /// completion path together with <see cref="AllowDemiReturn"/>.
     /// </summary>
     public bool AlwaysUseDemiReturn { get; init; } = false;
 
@@ -30,7 +36,7 @@ public struct ReturnChainConfig()
     /// <summary>
     /// Always execute たんきゅうしん after approaching a knowledge crystal,
     /// regardless of the optional buff setting or remaining durations.
-    /// Mode and treasure-hunt startup use this mandatory path.
+    /// Explicit operation startup may use this mandatory path.
     /// </summary>
     public bool ForceTankyushin { get; init; } = false;
 

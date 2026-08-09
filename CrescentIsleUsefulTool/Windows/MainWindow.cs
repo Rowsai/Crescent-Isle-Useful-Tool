@@ -226,6 +226,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
             "トレジャーハンター",
             () =>
             {
+                var automator = Plugin.Modules.GetModule<AutomatorModule>();
                 var modeEnabled = treasure.Config.ShouldEnableTreasureHunt;
                 var status = hunter.IsRunning
                     ? "実行中"
@@ -250,7 +251,17 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
                     : hunter.HasPausedRoute
                         ? "トレジャーハントを再開##OverviewTreasureHunt"
                         : "トレジャーハントを実施##OverviewTreasureHunt";
-                if (!ImGui.Button(buttonLabel, new Vector2(-1f, 34f)))
+                ImGui.BeginDisabled(!automator.IsAutomationActive);
+                var clicked = ImGui.Button(buttonLabel, new Vector2(-1f, 34f));
+                ImGui.EndDisabled();
+                if (!automator.IsAutomationActive)
+                {
+                    ImGui.TextDisabled(automator.IsSuspendedForCombat
+                        ? "戦闘中は変更できません。戦闘終了後に操作できます。"
+                        : "自動操作を開始すると、トレジャーハントを選択できます。");
+                }
+
+                if (!clicked)
                 {
                     return;
                 }
@@ -266,20 +277,12 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
                 treasure.Config.Enabled = true;
                 treasure.Config.EnableTreasureHunt = true;
                 treasure.PluginConfig.Save();
-                var automator = Plugin.Modules.GetModule<AutomatorModule>();
-                if (automator.Config.Enabled)
+                var teleporter = Plugin.Modules.GetModule<TeleporterModule>().teleporter;
+                if (automator.automator.Activity == null &&
+                    !automator.automator.IsWaitingForMagicPot &&
+                    !teleporter.IsCompletionReturnPending)
                 {
-                    var teleporter = Plugin.Modules.GetModule<TeleporterModule>().teleporter;
-                    if (automator.automator.Activity == null &&
-                        !automator.automator.IsWaitingForMagicPot &&
-                        !teleporter.IsCompletionReturnPending)
-                    {
-                        hunter.StartForAutomation(runStartupPreparation: true);
-                    }
-                }
-                else
-                {
-                    hunter.StartManually();
+                    hunter.StartForAutomation(runStartupPreparation: true);
                 }
             },
             "通常宝箱の巡回開始・停止は概要から操作します。",

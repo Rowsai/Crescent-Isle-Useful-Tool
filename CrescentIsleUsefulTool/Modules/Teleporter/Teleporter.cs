@@ -5,10 +5,12 @@ using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
 using CrescentIsleUsefulTool.Ipc;
+using CrescentIsleUsefulTool.Modules.Automator;
 using CrescentIsleUsefulTool.Modules.StateManager;
 using CrescentIsleUsefulTool.Modules.MagicPot;
 using CrescentIsleUsefulTool.Modules.Treasure;
 using Dalamud.Interface;
+using Dalamud.Game.ClientState.Conditions;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
@@ -145,11 +147,21 @@ public class Teleporter(TeleporterModule module)
 
     public void OnFateEnd(StateManagerModule states)
     {
+        if (IsTrackedByAutomator(EventType.Fate))
+        {
+            return;
+        }
+
         RequestMandatoryCompletionReturn("FATE完了");
     }
 
     public void OnCriticalEncounterEnd(StateManagerModule states)
     {
+        if (IsTrackedByAutomator(EventType.CriticalEncounter))
+        {
+            return;
+        }
+
         RequestMandatoryCompletionReturn("CE完了");
     }
 
@@ -187,6 +199,12 @@ public class Teleporter(TeleporterModule module)
             return true;
         }
 
+        if (Svc.Condition[ConditionFlag.InCombat])
+        {
+            completionReturnStatus = "戦闘終了後に、保留中の必須帰還を開始します。";
+            return true;
+        }
+
         TryStartCompletionReturn();
         return true;
     }
@@ -206,6 +224,21 @@ public class Teleporter(TeleporterModule module)
             completionReturnRequested = false;
             completionReturnInProgress = false;
             completionReturnStatus = "現在のエリアでは帰還処理を実行できません。";
+            return;
+        }
+
+        if (Svc.Condition[ConditionFlag.InCombat])
+        {
+            if (completionReturnInProgress)
+            {
+                completionDemiReturnCompleted |= activeCompletionReturnChain?.PerformedDemiReturn == true;
+                activeCompletionReturnChain = null;
+                completionReturnInProgress = false;
+                Plugin.Chain.Abort();
+            }
+
+            completionReturnStatus = "戦闘中はCIUTの帰還処理を停止しています。戦闘終了後に再開します。";
+            nextCompletionReturnAttemptUtc = DateTime.UtcNow.AddSeconds(1);
             return;
         }
 
@@ -250,7 +283,10 @@ public class Teleporter(TeleporterModule module)
 
     private void TryStartCompletionReturn()
     {
-        if (!completionReturnRequested || completionReturnInProgress || DateTime.UtcNow < nextCompletionReturnAttemptUtc)
+        if (!completionReturnRequested ||
+            completionReturnInProgress ||
+            Svc.Condition[ConditionFlag.InCombat] ||
+            DateTime.UtcNow < nextCompletionReturnAttemptUtc)
         {
             return;
         }
@@ -276,6 +312,7 @@ public class Teleporter(TeleporterModule module)
         var returnChain = new ReturnChain(module, new ReturnChainConfig
         {
             ForceReturn = true,
+            AllowDemiReturn = true,
             AlwaysUseDemiReturn = !completionDemiReturnCompleted,
             WaitForStationaryDemiReturn = true,
             ApproachAetheryte = true,
@@ -351,6 +388,13 @@ public class Teleporter(TeleporterModule module)
     {
         return module.TryGetModule<MagicPotModule>(out var magicPot) &&
                magicPot?.IsTreasureSearchActive == true;
+    }
+
+    private bool IsTrackedByAutomator(EventType type)
+    {
+        return module.TryGetModule<AutomatorModule>(out var automator) &&
+               automator?.Config.Enabled == true &&
+               automator.automator.Activity?.data.Type == type;
     }
 
     private void SuspendCompletionReturnForMagicPot()
