@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using CrescentIsleUsefulTool.Data;
+using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules;
 using CrescentIsleUsefulTool.Modules.Automator;
 using CrescentIsleUsefulTool.Modules.Buff;
@@ -150,7 +151,11 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
 
         ImGui.TableNextColumn();
         var buttonLabel = automator.IsEnabled ? "自動操作を停止" : "自動操作を開始";
-        if (ImGui.Button($"{buttonLabel}##HeaderAutomation", new Vector2(-1f, 0f)))
+        var dependenciesReady = AutomationDependencies.GetSnapshot().AllReady;
+        ImGui.BeginDisabled(!automator.IsEnabled && !dependenciesReady);
+        var automationClicked = ImGui.Button($"{buttonLabel}##HeaderAutomation", new Vector2(-1f, 0f));
+        ImGui.EndDisabled();
+        if (automationClicked)
         {
             AutomatorModule.ToggleAutomationMode(Plugin);
         }
@@ -210,11 +215,33 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
 
     private void DrawOverview(RenderContext context)
     {
+        DrawDependencyWarning();
         RenderModule<AutomatorModule>(context);
         DrawTreasureHuntOverviewControl();
         DrawResponsiveColumns(
             () => RenderModule<StateManagerModule>(context),
             () => RenderModule<MagicPotModule>(context));
+    }
+
+    private static void DrawDependencyWarning()
+    {
+        var dependencies = AutomationDependencies.GetSnapshot();
+        if (dependencies.AllReady)
+        {
+            return;
+        }
+
+        CrescentTheme.Card(
+            "RequiredPluginWarning",
+            "必須プラグインが有効になっていません",
+            () =>
+            {
+                ImGui.TextWrapped(
+                    $"CIUTの自動処理は停止しています：{string.Join("、", dependencies.MissingNames)}");
+                ImGui.TextDisabled("vnavmesh・BossMod Reborn（BMR）・Rotation Solver Reborn（RSR）をすべて有効にしてください。");
+            },
+            "不足しているプラグインを有効化すると、自動処理を開始できます。",
+            CrescentTheme.Danger);
     }
 
     private void DrawTreasureHuntOverviewControl()
@@ -247,7 +274,9 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
                 ImGui.Spacing();
 
                 var buttonLabel = modeEnabled
-                    ? "トレジャーハントを停止##OverviewTreasureHunt"
+                    ? hunter.CanRepeatCompletedRoute
+                        ? "トレジャーハントを再実行##OverviewTreasureHunt"
+                        : "トレジャーハントを停止##OverviewTreasureHunt"
                     : hunter.HasPausedRoute
                         ? "トレジャーハントを再開##OverviewTreasureHunt"
                         : "トレジャーハントを実施##OverviewTreasureHunt";
@@ -266,7 +295,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
                     return;
                 }
 
-                if (modeEnabled)
+                if (modeEnabled && !hunter.CanRepeatCompletedRoute)
                 {
                     treasure.Config.EnableTreasureHunt = false;
                     hunter.PauseFromMainWindow();
@@ -383,6 +412,7 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
 
     private void DrawCurrentSettingsPage()
     {
+        var dependencies = AutomationDependencies.GetSnapshot();
         var automator = primaryPlugin.Config.AutomatorConfig;
         var treasure = primaryPlugin.Config.TreasureConfig;
         var magicPot = primaryPlugin.Config.MagicPotConfig;
@@ -402,6 +432,33 @@ public class MainWindow(Plugin primaryPlugin, Config config) : OcelotMainWindow(
             : lowestBuffSeconds <= 0
                 ? "未付与"
                 : $"最短 {lowestBuffSeconds / 60}分{lowestBuffSeconds % 60}秒";
+
+        DrawSettingsCard("CurrentDependencySettings", "必須プラグイン・AI抑止", [
+            new SettingItem(
+                "vnavmesh",
+                dependencies.VnavmeshReady
+                    ? "有効・ナビメッシュ準備完了"
+                    : dependencies.VnavmeshLoaded ? "有効・ナビメッシュ準備中" : "無効／未ロード",
+                dependencies.VnavmeshReady ? CrescentTheme.Success : CrescentTheme.Danger),
+            new SettingItem(
+                "BossMod Reborn（BMR）",
+                dependencies.BossModRebornLoaded ? "有効" : "無効／未ロード",
+                dependencies.BossModRebornLoaded ? CrescentTheme.Success : CrescentTheme.Danger),
+            new SettingItem(
+                "Rotation Solver Reborn（RSR）",
+                dependencies.RotationSolverIpcReady
+                    ? dependencies.RotationSolverActive ? "有効・自動ローテーション稼働中" : "有効・自動ローテーション停止中"
+                    : dependencies.RotationSolverRebornLoaded ? "有効・IPC準備中" : "無効／未ロード",
+                dependencies.RotationSolverIpcReady ? CrescentTheme.Success : CrescentTheme.Danger),
+            new SettingItem(
+                "マジックポット宝箱中の攻撃抑止",
+                AutomationDependencies.IsMagicPotAiSuppressed ? "有効（BMR・RSRを一時抑止中）" : "待機中",
+                AutomationDependencies.IsMagicPotAiSuppressed ? CrescentTheme.Warning : CrescentTheme.Muted),
+            new SettingItem(
+                "CIUT自動処理ゲート",
+                dependencies.AllReady ? "実行可能" : $"停止中：{string.Join("、", dependencies.MissingNames)}",
+                dependencies.AllReady ? CrescentTheme.Success : CrescentTheme.Danger),
+        ]);
 
         DrawSettingsCard("CurrentAutomationSettings", "自動操作", [
             Setting("自動操作モード", automator.Enabled),

@@ -74,6 +74,10 @@ public class MagicPotModule : Module
 
     public int TreasureSearchHintCount => treasureHunter.HintCount;
 
+    public bool IsTreasureCombatAiSuppressed => treasureHunter.IsCombatAiSuppressed;
+
+    public IReadOnlyList<string> GetTreasureExecutionPlan() => treasureHunter.GetExecutionPlan();
+
     public int? OldestPlayerTimeMinutes { get; private set; }
 
     public MagicPotModule(Plugin plugin, Config config)
@@ -197,5 +201,11 @@ public class MagicPotModule : Module
             ? DateTime.UtcNow.AddSeconds(FirstSpawnDelaySeconds)
             : null;
         treasureHunter.ResetForTerritoryChange();
+    }
+
+    public override void Dispose()
+    {
+        treasureHunter.ResetForTerritoryChange();
+        base.Dispose();
     }
 }

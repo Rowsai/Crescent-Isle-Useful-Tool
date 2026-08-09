@@ -176,6 +176,10 @@ public abstract class Hunter
 
     protected virtual bool CanStartHunt => true;
 
+    protected virtual void PrepareForExplicitRestart()
+    {
+    }
+
     /// <summary>
     /// Rebuild the remaining route when a paused hunt is started again.
     /// The treasure hunter uses this to return to camp first while retaining
@@ -292,6 +296,19 @@ public abstract class Hunter
                 runtimeStatus = "青銅・白銀の宝箱座標を取得しています。";
                 return;
             }
+
+            if (GetValidNodes(config.MaxLevel).Count == 0)
+            {
+                // A completed/fully excluded route used to create a zero-step
+                // path, discard it, and repeat layout extraction every frame.
+                stopwatch.Stop();
+                running = false;
+                pathfinder = null;
+                VnavmeshIpc.TryCancelAllPathfinds(vnav);
+                VnavmeshIpc.TryStop(vnav);
+                runtimeStatus = "現在の巡回で確認可能な宝箱座標はすべて処理済みです。";
+                return;
+            }
         }
 
         runtimeStatus = Steps.Count == 0 ? "巡回経路を作成しています。" : "宝箱を巡回しています。";
@@ -322,6 +339,14 @@ public abstract class Hunter
                         Steps = steps!.Result;
                         stepIndex = 0;
                         ResetMovementValidation();
+                        if (Steps.Count == 0)
+                        {
+                            stopwatch.Stop();
+                            running = false;
+                            runtimeStatus = valid.Count == 0
+                                ? "現在の巡回で確認可能な宝箱座標はすべて処理済みです。"
+                                : "経路生成結果が0件のため、安全に停止しました。";
+                        }
                     })
                     .Then(_ => pathfinder = null);
             });
@@ -415,6 +440,86 @@ public abstract class Hunter
 
     public bool HasPausedRoute => HasPausedProgress;
 
+    public IReadOnlyList<string> GetExecutionPlan()
+    {
+        if (!running)
+        {
+            return HasPausedProgress
+                ?
+                [
+                    runtimeStatus,
+                    $"保存した巡回位置 {stepIndex + 1}/{Steps.Count} から再開",
+                    DescribeStep(Steps[stepIndex]),
+                    "宝箱オブジェクトを検出して開封結果を確認",
+                    "次の未確認座標へ継続",
+                ]
+                :
+                [
+                    runtimeStatus,
+                    "トレジャーハント開始要求を待機",
+                    "開始時にデミデジョンで拠点へ帰還",
+                    "たんきゅうしんとマギ・トレジャーサーチを実行",
+                    "内部データから固定巡回経路を生成",
+                ];
+        }
+
+        if (HasQueueWork(Plugin.Chain))
+        {
+            return
+            [
+                runtimeStatus,
+                "実行中の開始準備または帰還チェーンを完了",
+                "エーテライト付近でマギ・トレジャーサーチを実行",
+                "未確認の内部宝箱座標だけで固定経路を生成",
+                "固定経路の最初の座標へ移動",
+            ];
+        }
+
+        if (pathfinder != null || Steps.Count == 0)
+        {
+            return
+            [
+                runtimeStatus,
+                "内部データから地上の青銅・白銀座標を抽出",
+                "地下空洞・黄金宝箱・確認済み座標を除外",
+                "最大エリアレベル設定を適用して固定経路を生成",
+                "固定経路の最初の座標へ移動",
+            ];
+        }
+
+        var plan = new List<string> { runtimeStatus };
+        for (var index = stepIndex; index < Steps.Count && plan.Count < 5; index++)
+        {
+            plan.Add(DescribeStep(Steps[index]));
+        }
+
+        while (plan.Count < 5)
+        {
+            plan.Add(plan.Count == 1
+                ? "現在座標の宝箱検出結果を確定"
+                : plan.Count == 2
+                    ? "宝箱があれば開封し、消失を確認"
+                    : plan.Count == 3
+                        ? "次の未確認座標へ帰還せず移動"
+                        : "全座標確認後にトレジャーハントを終了");
+        }
+
+        return plan;
+    }
+
+    private static string DescribeStep(PathfinderStep step)
+    {
+        return step.Type switch
+        {
+            PathfinderStepType.WalkToNode => $"内部宝箱座標 ID {step.NodeId} の検出距離まで移動",
+            PathfinderStepType.ReturnToBaseCamp => "ベースキャンプへ帰還",
+            PathfinderStepType.WalkToAethernet => $"{step.Aethernet.ToFriendlyString()}の魔導通路まで移動",
+            PathfinderStepType.TeleportToAethernet => $"魔導通路で{step.Aethernet.ToFriendlyString()}へ転送",
+            PathfinderStepType.RideTurbulence => "南西高台の乱気流へ移動し、到着地点を確認",
+            _ => "次の巡回処理を実行",
+        };
+    }
+
     public void PauseFromMainWindow()
     {
         if (running)
@@ -433,6 +538,18 @@ public abstract class Hunter
         if (running)
         {
             return true;
+        }
+
+        var dependencies = AutomationDependencies.GetSnapshot();
+        if (!dependencies.AllReady)
+        {
+            runtimeStatus = $"必須プラグインの準備待ち：{string.Join("、", dependencies.MissingNames)}";
+            return false;
+        }
+
+        if (runStartupPreparation && !HasPausedProgress)
+        {
+            PrepareForExplicitRestart();
         }
 
         if (!CanStartHunt)
@@ -485,7 +602,9 @@ public abstract class Hunter
             Steps.Clear();
             pathfinder = null;
             stopwatch.Restart();
-            runtimeStatus = runStartupPreparation ? "開始準備中です。" : "巡回経路を作成しています。";
+            runtimeStatus = runStartupPreparation
+                ? "開始要求を受け付けました。デミデジョン、たんきゅうしん、残数更新を順に実行します。"
+                : "巡回経路を作成しています。";
         }
 
         return true;

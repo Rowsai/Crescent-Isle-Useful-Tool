@@ -74,6 +74,14 @@ public class ChainHelper
             .Then(ReturnChain(new ReturnChainConfig
             {
                 ForceReturn = true,
+                // An explicit treasure-hunt start is the second authorized
+                // Demi-Déjion entry point (the other is activity completion).
+                // Without this flag the old startup chain attempted to walk
+                // from the current field position to North Base Camp and could
+                // appear to do nothing on an unreachable segment.
+                AllowDemiReturn = true,
+                AlwaysUseDemiReturn = true,
+                WaitForStationaryDemiReturn = true,
                 ApproachAetheryte = true,
                 ApplyBuffs = true,
                 ForceTankyushin = true,

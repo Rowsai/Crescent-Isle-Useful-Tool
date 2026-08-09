@@ -83,12 +83,15 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
 
     internal int HintCount => hints.Count;
 
+    internal bool IsCombatAiSuppressed => AutomationDependencies.IsMagicPotAiSuppressed;
+
     internal void Update()
     {
         var hasGuidance = HasGuidanceBuff;
         if (!module.Config.ShouldEnableTreasureSearchMode || !ZoneData.IsInNorthHorn())
         {
-            if (hadGuidance)
+            if (hadGuidance || cofferDiscoveryPending || openingCofferEntityId != 0 ||
+                AutomationDependencies.IsMagicPotAiSuppressed)
             {
                 StopAndReset("財宝探索モードは停止中です。");
             }
@@ -124,6 +127,14 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         if (!VnavmeshIpc.IsOperational(vnav, out var waitingReason))
         {
             RuntimeStatus = waitingReason;
+            return;
+        }
+
+        if ((cofferDiscoveryPending || openingCofferEntityId != 0) &&
+            !AutomationDependencies.TrySuppressMagicPotCombatAi(out var suppressionFailure))
+        {
+            VnavmeshIpc.TryStop(vnav);
+            RuntimeStatus = suppressionFailure;
             return;
         }
 
@@ -310,7 +321,9 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
             cofferDiscoveryStartedUtc = DateTime.UtcNow;
             cofferLastSeenUtc = DateTime.MinValue;
             nextMovementRetryUtc = DateTime.MinValue;
-            RuntimeStatus = "宝箱を発見しました。開封を確認するまで操作を継続します。";
+            RuntimeStatus = AutomationDependencies.TrySuppressMagicPotCombatAi(out var suppressionFailure)
+                ? "宝箱を発見しました。BMR・RSRの攻撃を抑止し、開封まで操作を継続します。"
+                : suppressionFailure;
             return;
         }
 
@@ -408,6 +421,7 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         sourcePotFateId = null;
         ResetCofferInteraction();
         ResetMovementWatchdog();
+        AutomationDependencies.ReleaseMagicPotCombatAi();
         RuntimeStatus = status;
     }
 
@@ -460,6 +474,13 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         // processing until that same coffer has disappeared after an opening
         // attempt. This also covers localized discovery messages being missed.
         cofferDiscoveryPending = true;
+        if (!AutomationDependencies.TrySuppressMagicPotCombatAi(out var suppressionFailure))
+        {
+            VnavmeshIpc.TryStop(vnav);
+            RuntimeStatus = suppressionFailure;
+            return;
+        }
+
         var entityId = coffer.EntityId;
         discoveredCofferEntityId = entityId;
         if (cofferDiscoveryStartedUtc == DateTime.MinValue)
@@ -650,6 +671,70 @@ internal sealed class MagicPotTreasureHunter(MagicPotModule module)
         ResetCofferDiscovery();
         RuntimeStatus = "マジックポットの宝箱を開封しました。";
         ResetMovementWatchdog();
+    }
+
+    internal IReadOnlyList<string> GetExecutionPlan()
+    {
+        var aiStep = AutomationDependencies.IsMagicPotAiSuppressed
+            ? "BMR・RSRの攻撃抑止を維持"
+            : "BMR・RSRへ攻撃抑止を要求";
+
+        if (openingCofferEntityId != 0)
+        {
+            return
+            [
+                RuntimeStatus,
+                aiStep,
+                Player.Mounted ? "マウントから降りて宝箱へ再操作" : "移動せず開封詠唱の完了を確認",
+                "宝箱オブジェクトの消失で開封成功を確定",
+                HasGuidanceBuff ? "財宝誘導が残っているため次の黄金宝箱を探索" : "攻撃抑止を解除して必須帰還を再開",
+            ];
+        }
+
+        if (cofferDiscoveryPending)
+        {
+            return
+            [
+                RuntimeStatus,
+                aiStep,
+                discoveredCofferPosition is { } ? "最後に検出した宝箱位置へ接近" : "出現した黄金宝箱をオブジェクト表から検出",
+                "3m以内で停止し、マウントを降りて開封",
+                "開封詠唱と宝箱消失を確認するまで同じ対象を維持",
+            ];
+        }
+
+        if (target is { } destination)
+        {
+            return
+            [
+                RuntimeStatus,
+                $"推定地点まで残り {HorizontalDistance(Player.Position, destination):F0}mを経路移動",
+                "推定地点で停止してマジカルエリクサーを使用",
+                "新しい方角・距離ヒントから候補位置を再計算",
+                "黄金宝箱を検出した時点でBMR・RSRの攻撃を抑止",
+            ];
+        }
+
+        if (awaitingHint)
+        {
+            return
+            [
+                RuntimeStatus,
+                "マジカルエリクサーのチャットヒントを受信",
+                "現在位置・方角・距離から候補位置を計算",
+                "候補地点への到達可能経路を開始",
+                "黄金宝箱を検出した時点でBMR・RSRの攻撃を抑止",
+            ];
+        }
+
+        return
+        [
+            RuntimeStatus,
+            "マジカルエリクサーを使用",
+            "方角・距離ヒントを取得",
+            "候補地点を推定して経路移動",
+            "宝箱発見後はBMR・RSRの攻撃を抑止して開封",
+        ];
     }
 
     private bool RecoverStalledMovement(Vector3 destination, float distance, string destinationName)

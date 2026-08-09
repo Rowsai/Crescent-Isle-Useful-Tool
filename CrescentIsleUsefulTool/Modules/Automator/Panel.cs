@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using CrescentIsleUsefulTool.Data;
 using CrescentIsleUsefulTool.Enums;
+using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules.MagicPot;
 using CrescentIsleUsefulTool.Modules.Teleporter;
 using CrescentIsleUsefulTool.Ui;
@@ -24,10 +25,13 @@ public class Panel
                 if (ImGui.BeginTable("##AutomationSummary", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchSame))
                 {
                     ImGui.TableNextColumn();
-                    var status = module.IsSuspendedForCombat ? "戦闘中一時停止" : module.IsEnabled ? "有効" : "無効";
+                    var dependenciesReady = module.DependenciesReady;
+                    var status = !dependenciesReady
+                        ? "必須プラグイン待ち"
+                        : module.IsSuspendedForCombat ? "戦闘中一時停止" : module.IsEnabled ? "有効" : "無効";
                     var statusColor = module.IsSuspendedForCombat
                         ? CrescentTheme.Warning
-                        : module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted;
+                        : !dependenciesReady ? CrescentTheme.Danger : module.IsEnabled ? CrescentTheme.Success : CrescentTheme.Muted;
                     CrescentTheme.Status("ステータス", status, statusColor);
                     ImGui.TableNextColumn();
                     ImGui.TextDisabled("操作モード");
@@ -58,7 +62,11 @@ public class Panel
         }
 
         ImGui.TableNextColumn();
-        if (ImGui.Button(module.IsEnabled ? "自動操作を停止##MainAutomationToggle" : "自動操作を開始##MainAutomationToggle", new System.Numerics.Vector2(-1f, 0f)))
+        var dependencies = AutomationDependencies.GetSnapshot();
+        ImGui.BeginDisabled(!module.IsEnabled && !dependencies.AllReady);
+        var automationClicked = ImGui.Button(module.IsEnabled ? "自動操作を停止##MainAutomationToggle" : "自動操作を開始##MainAutomationToggle", new System.Numerics.Vector2(-1f, 0f));
+        ImGui.EndDisabled();
+        if (automationClicked)
         {
             if (module.IsEnabled)
             {
@@ -97,7 +105,9 @@ public class Panel
 
         if (!activityControlsEnabled)
         {
-            ImGui.TextDisabled(module.IsSuspendedForCombat
+            ImGui.TextDisabled(!dependencies.AllReady
+                ? $"必須プラグインを有効にしてください：{string.Join("、", dependencies.MissingNames)}"
+                : module.IsSuspendedForCombat
                 ? "戦闘中はCE・FATE移動を変更できません。戦闘終了後に自動操作が再開します。"
                 : "CE・FATE移動は、自動操作を開始すると選択できます。");
         }

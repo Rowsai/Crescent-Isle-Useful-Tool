@@ -12,6 +12,7 @@ using CrescentIsleUsefulTool.Modules.Fates;
 using CrescentIsleUsefulTool.Modules.MagicPot;
 using CrescentIsleUsefulTool.Modules.StateManager;
 using CrescentIsleUsefulTool.Modules.Teleporter;
+using CrescentIsleUsefulTool.Modules.Treasure;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
@@ -697,6 +698,19 @@ public class Automator
 
     public IReadOnlyList<string> GetExecutionPlan(AutomatorModule module)
     {
+        var dependencies = AutomationDependencies.GetSnapshot();
+        if (!dependencies.AllReady)
+        {
+            return
+            [
+                $"必須プラグイン不足によりCIUT自動処理を停止：{string.Join("、", dependencies.MissingNames)}",
+                "vnavmesh・BMR・RSRをすべてロード",
+                "vnavmeshの現在エリア用ナビメッシュ準備を確認",
+                "RSR IPCの登録完了を確認",
+                "準備完了後に自動操作と選択済み機能を再評価",
+            ];
+        }
+
         if (!module.IsEnabled)
         {
             return
@@ -706,7 +720,6 @@ public class Automator
                 "CE移動・FATE移動・トレジャーハントを個別に選択",
                 "選択した機能だけを監視・実行",
                 "戦闘中はCIUTを停止して戦闘AIへ操作を委譲",
-                "選択されるまでCIUTは移動・帰還を行いません",
             ];
         }
 
@@ -734,29 +747,40 @@ public class Automator
             ];
         }
 
+        if (module.TryGetModule<MagicPotModule>(out var activeMagicPot) &&
+            activeMagicPot?.IsTreasureSearchActive == true)
+        {
+            return activeMagicPot.GetTreasureExecutionPlan();
+        }
+
         if (Plugin.Chain.CurrentChain?.Name == "TankyushinAtKnowledgeCrystal")
         {
+            if (module.IsAutomatedTreasureHuntRunning())
+            {
+                return
+                [
+                    "トレジャーハント開始要求を実行中",
+                    "デミデジョンで北部ベースキャンプへ帰還",
+                    "ナレッジクリスタル付近でたんきゅうしんを実行",
+                    "エーテライト付近でマギ・トレジャーサーチを実行",
+                    "内部データの未確認座標から固定巡回経路を生成",
+                ];
+            }
+
             return
             [
-                "デミデジョンを使わず拠点へ移動",
                 "ナレッジクリスタル付近へ移動",
                 "移動停止とマウント解除を確認",
                 "すっぴんへ変更してたんきゅうしんを実行",
-                "元のサポートジョブへ復帰して監視開始",
+                "付与対象バフを確認",
+                "元のサポートジョブへ復帰して選択済み処理を再評価",
             ];
         }
 
         var teleporter = module.GetModule<TeleporterModule>().teleporter;
         if (teleporter.IsCompletionReturnPending)
         {
-            return
-            [
-                teleporter.CompletionReturnStatus,
-                "拠点への帰還を確認",
-                "マギ・トレジャーサーチで残数を更新",
-                "必要ならたんきゅうしんでバフを更新",
-                "エーテライト付近へ移動して監視再開",
-            ];
+            return teleporter.GetCompletionExecutionPlan();
         }
 
         if (waitingForMagicPot)
@@ -773,39 +797,35 @@ public class Automator
 
         if (Activity != null)
         {
+            var name = Activity.GetName();
+            var distance = Math.Max(0f, Activity.DistanceToDestination());
             return Activity.state switch
             {
                 ActivityState.Idle =>
-                ["現在の移動処理を整理", "最寄りエーテライトを決定", "エーテライトで移動", "発生地点へ経路移動", "参加・完了を監視"],
+                [$"{name}を移動対象として確定", "現在の移動処理を停止", "対象に最も近い利用可能エーテライトを決定", "魔導通路で転送", $"発生地点まで約 {distance:F0}mを経路移動"],
                 ActivityState.Pathfinding =>
-                ["発生地点へ経路移動", "対象範囲への到着を確認", "FATE・CEへ参加", "完了を監視", "デミデジョンで拠点へ帰還"],
+                [$"{name}へ経路移動中（残り約 {distance:F0}m）", "対象範囲への到着を確認", $"{name}へ参加", "完了または消失を監視", "完了・消失時にデミデジョンで拠点へ帰還"],
                 ActivityState.Participating =>
-                ["参加中のFATE・CEを継続", "完了または消滅を検知", "移動・戦闘支援を停止", "デミデジョンで拠点へ帰還", "エーテライト付近で監視再開"],
+                [$"{name}へ参加中", "戦闘中はCIUT操作を停止してBMR・RSRへ委譲", "完了または消失を検知", "デミデジョンで拠点へ帰還", "エーテライト付近で選択済み処理を再評価"],
                 _ =>
-                ["完了処理を開始", "デミデジョンを実行", "拠点へ帰還", "エーテライト付近へ移動", "監視を再開"],
+                [$"{name}の完了処理を開始", "移動と対象処理を停止", "デミデジョンを実行", "北部ベースキャンプのエーテライト付近へ移動", "選択済み処理を再評価"],
             };
         }
 
         if (module.IsAutomatedTreasureHuntRunning())
         {
-            return
-            [
-                "内部データの次の通常宝箱座標を確認",
-                "最大エリアレベルと到達可能経路を検証",
-                "宝箱のオブジェクト検出範囲まで移動",
-                "宝箱を開封し、消失を確認",
-                "デミデジョンせず次の未確認座標へ移動",
-            ];
+            var treasure = module.GetModule<TreasureModule>();
+            return treasure.Hunter.GetExecutionPlan();
         }
 
         var order = string.Join(" → ", module.Config.GetPriorityOrder().Select(priority => priority.ToJapaneseLabel()));
         return
         [
+            RuntimeStatus,
             $"優先順位を適用：{order}",
-            "有効なFATE・CEを監視",
-            "マジックポット予想が5分未満か確認",
-            "対象がなければ拠点へ帰還",
-            "エーテライト付近で待機を継続",
+            "発生中の選択済みFATE・CEを再取得",
+            "マジックポット予想が5分未満か再判定",
+            "対象がなければ現在エリアのベースキャンプ・エーテライト付近で待機",
         ];
     }
 

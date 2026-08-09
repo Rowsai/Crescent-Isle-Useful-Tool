@@ -8,7 +8,8 @@ public struct ReturnChainConfig()
 
     /// <summary>
     /// Allows this chain to cast Demi-Déjion. This is disabled by default so
-    /// only the centralized activity-completion return can issue the action.
+    /// only explicitly authorized flows (activity completion and a requested
+    /// treasure-hunt startup) can issue the action.
     /// </summary>
     public bool AllowDemiReturn { get; init; } = false;
 

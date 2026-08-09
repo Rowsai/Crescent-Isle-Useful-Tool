@@ -1,6 +1,7 @@
 using System;
 using CrescentIsleUsefulTool.Chains;
 using CrescentIsleUsefulTool.Data;
+using CrescentIsleUsefulTool.Ipc;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin;
@@ -80,6 +81,15 @@ public sealed class Plugin : OcelotPlugin
 
     protected override bool ShouldUpdate()
     {
+        var dependencies = AutomationDependencies.GetSnapshot();
+        if (!dependencies.AllReady)
+        {
+            // Never leave the temporary Magic Pot combat lock behind when a
+            // required provider is disabled while CIUT is running.
+            AutomationDependencies.ReleaseMagicPotCombatAi();
+            return false;
+        }
+
         return ZoneData.IsInOccultCrescent()
                && !(
                    Svc.Condition[ConditionFlag.BetweenAreas] ||

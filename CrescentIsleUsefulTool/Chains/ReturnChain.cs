@@ -26,6 +26,12 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
 
     public bool PerformedDemiReturn => performedDemiReturn;
 
+    public bool BuffCheckCompleted { get; private set; }
+
+    public bool AetheryteApproachCompleted { get; private set; }
+
+    public bool TreasureSightCompleted { get; private set; }
+
     public string CurrentStatus { get; private set; } = "帰還処理を準備しています。";
 
     protected override Chain Create(Chain chain)
@@ -67,6 +73,7 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                 CurrentStatus = "ナレッジクリスタル付近でバフを確認しています。";
                 return ApplyBuffs(config.ForceTankyushin);
             });
+        chain.Then(_ => BuffCheckCompleted = true);
 
         if (config.ApproachAetheryte)
         {
@@ -79,13 +86,22 @@ public class ReturnChain(TeleporterModule module, ReturnChainConfig config) : Re
                 LifestreamIpc.TryGetActiveCustomAetheryte(lifestream, out var active) &&
                 active != 0 &&
                 Player.DistanceTo(position) <= AethernetData.DISTANCE);
-            chain.Then(_ => { VnavmeshIpc.TryStop(vnav); });
+            chain.Then(_ =>
+            {
+                VnavmeshIpc.TryStop(vnav);
+                AetheryteApproachCompleted = true;
+            });
+        }
+        else
+        {
+            AetheryteApproachCompleted = true;
         }
 
         // Treasuresight must be issued only after the return and the final
         // approach to the base-camp aetheryte have both completed.
         chain.Then(_ => CurrentStatus = "エーテライト付近でマギ・トレジャーサーチを実行しています。");
         chain.Then(ChainHelper.TreasureSightChain(config.UpdateTreasureCount));
+        chain.Then(_ => TreasureSightCompleted = true);
 
         return chain.Then(_ =>
         {

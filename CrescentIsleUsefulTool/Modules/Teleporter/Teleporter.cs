@@ -42,9 +42,59 @@ public class Teleporter(TeleporterModule module)
 
     public string CompletionReturnStatus => activeCompletionReturnChain?.CurrentStatus ?? completionReturnStatus;
 
+    public System.Collections.Generic.IReadOnlyList<string> GetCompletionExecutionPlan()
+    {
+        var plan = new System.Collections.Generic.List<string> { CompletionReturnStatus };
+        var chain = activeCompletionReturnChain;
+        var demiCompleted = completionDemiReturnCompleted || chain?.PerformedDemiReturn == true;
+        if (!demiCompleted)
+        {
+            plan.Add("移動・マウント・戦闘状態を解消してデミデジョンを実行");
+        }
+
+        if (chain?.BuffCheckCompleted != true)
+        {
+            plan.Add("ナレッジクリスタル付近でバフしきい値を確認し、必要ならたんきゅうしんを実行");
+        }
+
+        if (chain?.AetheryteApproachCompleted != true)
+        {
+            plan.Add("現在エリアのベースキャンプ・エーテライト付近まで移動");
+        }
+
+        if (chain?.TreasureSightCompleted != true)
+        {
+            plan.Add("エーテライト付近でマギ・トレジャーサーチの残数を更新");
+        }
+
+        if (plan.Count < 5)
+        {
+            plan.Add("帰還チェーンの完了通知と拠点到着状態を確定");
+        }
+
+        if (plan.Count < 5)
+        {
+            plan.Add("保留していた自動処理の状態を復元");
+        }
+
+        if (plan.Count < 5)
+        {
+            plan.Add("選択済みのFATE・CE・トレジャーハントを再評価");
+        }
+
+        if (plan.Count < 5)
+        {
+            plan.Add("対象がなければ現在エリアのベースキャンプで待機");
+        }
+
+        return plan.Take(5).ToArray();
+    }
+
     public void Button(Aethernet? aethernet, Vector3 destination, string name, string id, EventData ev)
     {
-        if (!module.TryGetIPCSubscriber<VNavmesh>(out var vnav) || !VnavmeshIpc.IsOperational(vnav, out _))
+        if (!AutomationDependencies.GetSnapshot().AllReady ||
+            !module.TryGetIPCSubscriber<VNavmesh>(out var vnav) ||
+            !VnavmeshIpc.IsOperational(vnav, out _))
         {
             return;
         }
@@ -172,7 +222,8 @@ public class Teleporter(TeleporterModule module)
     /// </summary>
     public bool RequestMandatoryCompletionReturn(string reason)
     {
-        if (!ZoneData.IsInOccultCrescent() || ZoneData.IsInForkedTower() || Player.IsDead)
+        if (!AutomationDependencies.GetSnapshot().AllReady ||
+            !ZoneData.IsInOccultCrescent() || ZoneData.IsInForkedTower() || Player.IsDead)
         {
             return false;
         }
@@ -288,6 +339,14 @@ public class Teleporter(TeleporterModule module)
             Svc.Condition[ConditionFlag.InCombat] ||
             DateTime.UtcNow < nextCompletionReturnAttemptUtc)
         {
+            return;
+        }
+
+        var dependencies = AutomationDependencies.GetSnapshot();
+        if (!dependencies.AllReady)
+        {
+            completionReturnStatus = $"必須プラグインの準備完了後に帰還を再開します：{string.Join("、", dependencies.MissingNames)}";
+            nextCompletionReturnAttemptUtc = DateTime.UtcNow.AddSeconds(1);
             return;
         }
 

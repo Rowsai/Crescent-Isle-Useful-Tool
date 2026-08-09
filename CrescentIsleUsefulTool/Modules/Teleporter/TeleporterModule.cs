@@ -1,4 +1,5 @@
 using CrescentIsleUsefulTool.Data;
+using CrescentIsleUsefulTool.Ipc;
 using CrescentIsleUsefulTool.Modules.StateManager;
 using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
@@ -60,7 +61,8 @@ public class TeleporterModule : Module
 
     private unsafe void OnSelectYesnoPostSetup(AddonEvent type, AddonArgs args)
     {
-        if (!ZoneData.IsInOccultCrescent() || ZoneData.IsInForkedTower() || Player.IsDead)
+        if (!AutomationDependencies.GetSnapshot().AllReady ||
+            !ZoneData.IsInOccultCrescent() || ZoneData.IsInForkedTower() || Player.IsDead)
         {
             return;
         }

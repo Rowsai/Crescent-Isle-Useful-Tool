@@ -36,7 +36,9 @@ public class AutomatorModule : Module
     public bool IsSuspendedForCombat => Config.Enabled &&
                                         (suspendedForCombat || Svc.Condition[ConditionFlag.InCombat]);
 
-    public bool IsAutomationActive => Config.Enabled && !IsSuspendedForCombat;
+    public bool DependenciesReady => AutomationDependencies.GetSnapshot().AllReady;
+
+    public bool IsAutomationActive => Config.Enabled && DependenciesReady && !IsSuspendedForCombat;
 
     public bool HasSelectedOperation => Config.ShouldDoCriticalEncounters ||
                                         Config.ShouldDoFates ||
@@ -97,6 +99,16 @@ public class AutomatorModule : Module
 
     public void EnableAutomationMode()
     {
+        var dependencies = AutomationDependencies.GetSnapshot();
+        if (!dependencies.AllReady)
+        {
+            Config.Enabled = false;
+            automator.SetRuntimeStatus(
+                $"必須プラグインが準備できていないため開始できません：{string.Join("、", dependencies.MissingNames)}");
+            PluginConfig.Save();
+            return;
+        }
+
         var wasDisabled = !Config.Enabled;
         Config.Enabled = true;
 
@@ -143,6 +155,7 @@ public class AutomatorModule : Module
             VnavmeshIpc.TryStop(vnav);
         }
         Plugin.Chain.Abort();
+        AutomationDependencies.ReleaseMagicPotCombatAi();
         PauseAutomatedTreasureHunt("自動操作モードを停止したため、宝箱巡回を一時停止しました。");
         if (shouldTurnOffAiProvider)
         {

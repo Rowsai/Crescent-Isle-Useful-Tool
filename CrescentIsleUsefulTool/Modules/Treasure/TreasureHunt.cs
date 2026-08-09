@@ -72,12 +72,34 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
 
     public int CheckedWithoutCofferCount => Math.Max(0, CompletedLocationCount - SurfaceOpenedThisRun);
 
+    public bool CanRepeatCompletedRoute => !IsRunning &&
+                                           !HasPausedRoute &&
+                                           treasure.Count > 0 &&
+                                           RemainingLocationCount == 0;
+
     protected override bool RebuildRouteOnResume => ZoneData.IsInNorthHorn();
 
     protected override bool RebuildRouteAfterUnreachable => ZoneData.IsInNorthHorn();
 
     protected override bool CanStartHunt =>
         !ZoneData.IsInNorthHorn() || treasure.Count == 0 || RemainingLocationCount > 0;
+
+    protected override void PrepareForExplicitRestart()
+    {
+        if (!ZoneData.IsInNorthHorn() || treasure.Count == 0)
+        {
+            return;
+        }
+
+        // A new button press starts a fresh verification pass. Coordinates
+        // whose coffers CIUT actually opened remain excluded, while locations
+        // that were merely empty, temporarily unreachable, or unsafe are
+        // eligible again. This prevents a previous pass from producing a
+        // permanent 0-step route without revisiting an opened chest.
+        completedNodeIds.RemoveWhere(nodeId => !openedNodeTypes.ContainsKey(nodeId));
+        unreachableNodeIds.Clear();
+        unsafeNodeIds.Clear();
+    }
 
     protected override float GetInactiveNodeConfirmationRange()
     {
@@ -379,6 +401,9 @@ public class TreasureHunt(TreasureModule module) : Hunter(module)
     protected override void OnHuntStarted(bool isResuming)
     {
         Plugin.Chain.Abort();
+        VnavmeshIpc.TryCancelAllPathfinds(vnav);
+        VnavmeshIpc.TryStop(vnav);
+        runtimeStatus = "開始要求を受け付けました。デミデジョンで北部ベースキャンプへ帰還します。";
         Plugin.Chain.Submit(ChainHelper.TankyushinAtKnowledgeCrystalChain(updateTreasureCount: true));
 
         if (!isResuming && completedNodeIds.Count == 0)
